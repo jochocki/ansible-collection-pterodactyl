@@ -52,13 +52,19 @@ def rotate_and_backup(client, identifier, limit, timeout=600, interval=10, sleep
     """
     if limit == 0:
         return "skipped: backup limit is 0"
-    existing = client.backups(identifier)
-    if len(existing) >= limit:
-        deletable = [b for b in existing if not b.get("is_locked")]
+    # The panel counts every backup that succeeded or is still running, and refuses a new one at
+    # the limit. A server can hold more than its limit (the limit was lowered later), so one
+    # deletion is not always enough: delete oldest-first until there is room for one more.
+    counted = [b for b in client.backups(identifier) if b.get("is_successful") or not b.get("completed_at")]
+    deletable = sorted((b for b in counted if not b.get("is_locked")), key=lambda b: b["created_at"])
+    while len(counted) >= limit:
         if not deletable:
-            raise PterodactylError("all %d backups are locked; cannot make room for a new one" % len(existing))
-        oldest = min(deletable, key=lambda b: b["created_at"])
+            raise PterodactylError(
+                "%d of %d backups count against the limit and the rest are locked; "
+                "unlock or delete one to make room" % (len(counted), limit))
+        oldest = deletable.pop(0)
         client.delete_backup(identifier, oldest["uuid"])
+        counted.remove(oldest)
     created = client.create_backup(identifier)
     uuid = created["uuid"]
 

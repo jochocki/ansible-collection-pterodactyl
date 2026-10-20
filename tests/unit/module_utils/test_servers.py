@@ -57,6 +57,24 @@ class Backups(unittest.TestCase):
             srv.rotate_and_backup(c, "id", 2, sleep=no_sleep)
         self.assertNotIn("create_backup", c.names())
 
+    def test_over_the_limit_deletes_until_there_is_room(self):
+        c = FakeClient(backups=[bk("c", "3"), bk("a", "1"), bk("b", "2")])
+        srv.rotate_and_backup(c, "id", 2, sleep=no_sleep)
+        self.assertEqual(c.calls[:2], [("delete_backup", "a"), ("delete_backup", "b")])
+        self.assertEqual(c.names()[-1], "create_backup")
+
+    def test_over_the_limit_with_too_many_locked_fails_without_creating(self):
+        c = FakeClient(backups=[bk("a", "1", True), bk("b", "2", True), bk("c", "3")])
+        with self.assertRaisesRegex(PterodactylError, "locked"):
+            srv.rotate_and_backup(c, "id", 2, sleep=no_sleep)
+        self.assertNotIn("create_backup", c.names())
+
+    def test_failed_backups_do_not_count_against_the_limit(self):
+        failed = dict(bk("bad", "1"), is_successful=False, completed_at="x")
+        c = FakeClient(backups=[failed, bk("a", "2")])
+        srv.rotate_and_backup(c, "id", 2, sleep=no_sleep)
+        self.assertEqual(c.names(), ["create_backup"])
+
     def test_room_available_deletes_nothing(self):
         c = FakeClient(backups=[bk("a", "1")])
         srv.rotate_and_backup(c, "id", 2, sleep=no_sleep)

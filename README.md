@@ -37,7 +37,9 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
   get 17, 1.20.5 to 1.21.x get 21, and year-numbered releases (26.x) get 25. The
   module sets the image on the server, so the egg does not need to list it.
 - **A version change is a sequence.** The server stops, is backed up (the oldest
-  unlocked backup makes room), is reinstalled, gets its mods, and then returns
+  unlocked backups are deleted until there is room, which can be more than one
+  when the server holds more backups than its limit; locked ones are never
+  deleted, and the run fails if they leave no room), is reinstalled, gets its mods, and then returns
   to its previous power state.
 - **The egg owns its variables.** On an update only the Minecraft version is
   changed: every other egg variable keeps the server's value, so a server's
