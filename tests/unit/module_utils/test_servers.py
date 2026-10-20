@@ -1,5 +1,6 @@
 import unittest
 
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils import minecraft_ops as ops
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils import servers as srv
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
 from ansible_collections.jochocki.pterodactyl.tests.unit.fakes import FakeClient, no_sleep, server
@@ -85,7 +86,7 @@ class Power(unittest.TestCase):
 class Create(unittest.TestCase):
     def test_creates_with_java_25_for_year_release(self):
         c = FakeClient(servers=[])
-        out = srv.ensure_minecraft_server(c, spec(limits={"memory": 3000, "backups": 2}), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(limits={"memory": 3000, "backups": 2}), sleep=no_sleep)
         payload = c.calls[0][1]
         self.assertTrue(out["changed"])
         self.assertEqual(payload["docker_image"], "ghcr.io/pterodactyl/yolks:java_25")
@@ -97,18 +98,18 @@ class Create(unittest.TestCase):
 
     def test_create_waits_for_install(self):
         c = FakeClient(servers=[])
-        srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         self.assertGreaterEqual(c.installing, 2)  # polled until the fake reported done
 
     def test_check_mode_creates_nothing(self):
         c = FakeClient(servers=[])
-        out = srv.ensure_minecraft_server(c, spec(), check_mode=True)
+        out = ops.ensure_minecraft_server(c, spec(), check_mode=True)
         self.assertTrue(out["changed"])
         self.assertEqual(c.calls, [])
 
     def test_unknown_node_fails(self):
         with self.assertRaisesRegex(PterodactylError, "node named 'nope'"):
-            srv.ensure_minecraft_server(FakeClient(), spec(node="nope"))
+            ops.ensure_minecraft_server(FakeClient(), spec(node="nope"))
 
 
 class Converge(unittest.TestCase):
@@ -116,13 +117,13 @@ class Converge(unittest.TestCase):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
                               "environment": {"MC_VERSION": "26.3"}})
         c = FakeClient(servers=[s])
-        out = srv.ensure_minecraft_server(c, spec(limits={"memory": 3000, "cpu": 300}), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(limits={"memory": 3000, "cpu": 300}), sleep=no_sleep)
         self.assertFalse(out["changed"])
         self.assertEqual(c.calls, [])
 
     def test_version_bump_order_of_operations(self):
         c = FakeClient(servers=[server()], state="running", backups=[bk("a", "1"), bk("b", "2")])
-        out = srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         order = c.names()
         self.assertEqual(order, ["power", "delete_backup", "create_backup", "update_startup", "reinstall", "power"])
         self.assertEqual(c.calls[0], ("power", "stop"))
@@ -135,13 +136,13 @@ class Converge(unittest.TestCase):
 
     def test_restore_power_false_leaves_server_stopped_and_reports_it(self):
         c = FakeClient(servers=[server()], state="running", backups=[])
-        out = srv.ensure_minecraft_server(c, spec(), restore_power=False, sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(), restore_power=False, sleep=no_sleep)
         self.assertNotIn(("power", "start"), c.calls)
         self.assertEqual((out["previous_power"], out["power_after"]), ("started", "stopped"))
 
     def test_restore_power_true_reports_started_after(self):
         c = FakeClient(servers=[server()], state="running", backups=[])
-        out = srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         self.assertEqual((out["previous_power"], out["power_after"]), ("started", "started"))
 
     def test_no_change_reports_the_real_power_state(self):
@@ -149,38 +150,38 @@ class Converge(unittest.TestCase):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
                               "environment": {"MC_VERSION": "26.3"}})
         for state, label in (("running", "started"), ("offline", "stopped")):
-            out = srv.ensure_minecraft_server(FakeClient(servers=[s], state=state), spec(), sleep=no_sleep)
+            out = ops.ensure_minecraft_server(FakeClient(servers=[s], state=state), spec(), sleep=no_sleep)
             self.assertFalse(out["changed"])
             self.assertEqual((out["previous_power"], out["power_after"]), (label, label))
 
     def test_check_mode_reports_real_power_state(self):
         c = FakeClient(servers=[server()], state="running")
-        out = srv.ensure_minecraft_server(c, spec(), check_mode=True)
+        out = ops.ensure_minecraft_server(c, spec(), check_mode=True)
         self.assertEqual(out["previous_power"], "started")
 
     def test_stopped_server_stays_stopped(self):
         c = FakeClient(servers=[server()], state="offline", backups=[])
-        out = srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         self.assertNotIn("power", c.names())
         self.assertEqual(out["previous_power"], "stopped")
 
     def test_backup_can_be_disabled(self):
         c = FakeClient(servers=[server()], state="offline")
-        srv.ensure_minecraft_server(c, spec(), backup=False, sleep=no_sleep)
+        ops.ensure_minecraft_server(c, spec(), backup=False, sleep=no_sleep)
         self.assertNotIn("create_backup", c.names())
 
     def test_image_only_change_does_not_reinstall_or_stop(self):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_21", "startup_command": "x",
                               "environment": {"MC_VERSION": "26.3"}})
         c = FakeClient(servers=[s], state="running")
-        srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         self.assertEqual(c.names(), ["update_startup"])
 
     def test_limits_patch_keeps_other_fields(self):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
                               "environment": {"MC_VERSION": "26.3"}})
         c = FakeClient(servers=[s])
-        srv.ensure_minecraft_server(c, spec(limits={"memory": 4000}), sleep=no_sleep)
+        ops.ensure_minecraft_server(c, spec(limits={"memory": 4000}), sleep=no_sleep)
         body = c.calls[0][1]
         self.assertEqual((body["memory"], body["cpu"], body["disk"]), (4000, 300, 500))
         self.assertEqual(body["feature_limits"]["backups"], 2)
@@ -190,21 +191,21 @@ class Converge(unittest.TestCase):
         s = server(external_id=None, container={"image": "ghcr.io/pterodactyl/yolks:java_25",
                                                 "startup_command": "x", "environment": {"MC_VERSION": "26.3"}})
         c = FakeClient(servers=[s])
-        out = srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        out = ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
         self.assertEqual(c.calls[0][0], "update_details")
         self.assertEqual(c.calls[0][1]["external_id"], "tiny-animals")
         self.assertTrue(out["changed"])
 
     def test_check_mode_makes_no_calls(self):
         c = FakeClient(servers=[server()], state="running")
-        out = srv.ensure_minecraft_server(c, spec(limits={"memory": 9}), check_mode=True)
+        out = ops.ensure_minecraft_server(c, spec(limits={"memory": 9}), check_mode=True)
         self.assertTrue(out["changed"])
         self.assertEqual(c.calls, [])
 
     def test_wrong_egg_is_refused(self):
         c = FakeClient(servers=[server(egg=5)])
         with self.assertRaisesRegex(PterodactylError, "different egg"):
-            srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+            ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
 
 
 # -- converge_minecraft: server and mods together ---------------------------
@@ -223,7 +224,7 @@ JAR = {"fabric-api-1.0.jar": GOOD}
 
 def converge(client, mods=("fabric-api",), fetch=CATALOG, **kw):
     mods = list(mods) if mods is not None else None
-    return srv.converge_minecraft(client, spec(), mods=mods, fetch=fetch, sleep=no_sleep, **kw)
+    return ops.converge_minecraft(client, spec(), mods=mods, fetch=fetch, sleep=no_sleep, **kw)
 
 
 class ConvergeWithMods(unittest.TestCase):
@@ -255,7 +256,7 @@ class ConvergeWithMods(unittest.TestCase):
     def test_vanilla_with_mods_is_refused_before_any_change(self):
         c = FakeClient(servers=[server()], state="running")
         with self.assertRaisesRegex(PterodactylError, "does not support mods"):
-            srv.converge_minecraft(c, spec(loader="vanilla"), mods=["fabric-api"], fetch=CATALOG, sleep=no_sleep)
+            ops.converge_minecraft(c, spec(loader="vanilla"), mods=["fabric-api"], fetch=CATALOG, sleep=no_sleep)
         self.assertEqual(c.calls, [])
 
     def test_mods_failing_after_a_version_change_leave_the_server_stopped(self):

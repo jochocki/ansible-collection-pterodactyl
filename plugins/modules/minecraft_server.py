@@ -183,10 +183,8 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft imp
     release_ids,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
-from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import (
-    converge_minecraft,
-    find_server,
-)
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft_ops import converge_minecraft
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import find_server
 
 
 def default_external_id(name):

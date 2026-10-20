@@ -4,5 +4,8 @@ action_groups:
   # module_defaults: group/jochocki.pterodactyl.pterodactyl sets the panel
   # connection once for every module in a play.
   pterodactyl:
-    - minecraft_server
+    - pterodactyl_server
+    - pterodactyl_build
+    - pterodactyl_startup
     - pterodactyl_power
+    - minecraft_server

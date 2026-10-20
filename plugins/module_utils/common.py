@@ -20,6 +20,11 @@ def connection_spec():
     )
 
 
+def summarize(server):
+    """The fields of a server worth returning from a module."""
+    return {k: server.get(k) for k in ("id", "identifier", "name", "external_id")}
+
+
 def build_client(module):
     if not module.params["panel_url"] or not module.params["api_key"]:
         module.fail_json(msg="panel_url and api_key are required (or set PTERODACTYL_URL and PTERODACTYL_API_KEY)")

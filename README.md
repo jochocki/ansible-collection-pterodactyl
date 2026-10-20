@@ -6,13 +6,26 @@ they need no SSH access to the Wings node.
 
 ## Modules
 
-| Module | What it does |
-| --- | --- |
-| `minecraft_server` | Creates a server, converges its limits and version, and optionally keeps its mods in step with Modrinth. |
-| `pterodactyl_power` | Starts, stops, restarts or kills a server. |
+The generic modules follow the tabs of the panel's server page, so they work for
+any game on the panel. `minecraft_server` sits on top and adds what only
+Minecraft needs.
 
-Supported loaders in 0.1.0: `fabric`, `paper` and `vanilla`. The panel needs
-eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
+| Module | Panel tab | What it does |
+| --- | --- | --- |
+| `pterodactyl_server` | Details | Creates, renames and deletes a server. Setting `external_id` makes a later rename safe. |
+| `pterodactyl_build` | Build Configuration | CPU, memory, disk, IO, swap, and the backup, database and allocation limits. |
+| `pterodactyl_startup` | Startup | Docker image, startup command and egg variables, with an optional reinstall. |
+| `pterodactyl_power` | Console | Starts, stops, restarts or kills a server. |
+| `minecraft_server` | all of them | Turns a Minecraft version and loader into the right egg, Java image and variables, then converges the server, its mods and its power state in the right order. |
+
+Ansible modules can't call each other, so the layering is in the code: every
+module is a thin wrapper over the same functions in `module_utils`, and
+`minecraft_server` uses the same ones the generic modules do. A generic module
+changes only what you set and nothing else. It does not stop, back up or restart
+the server: ordering is `minecraft_server`'s job, or yours.
+
+Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
+`vanilla`. The panel needs eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
 
 ## Behavior worth knowing
 
@@ -32,7 +45,7 @@ eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
 ## Example
 
 ```yaml
-- name: A modded server
+- name: A modded Minecraft server
   jochocki.pterodactyl.minecraft_server:
     name: Tiny Animals
     loader: fabric
@@ -51,6 +64,25 @@ eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
     loader: vanilla
     version: "1.21"
     node: wings01
+```
+
+### A game that is not Minecraft
+
+```yaml
+- name: Create it
+  jochocki.pterodactyl.pterodactyl_server:
+    name: Factorio
+    owner: 1
+    node: wings01
+    egg: Factorio
+    docker_image: ghcr.io/ptero-eggs/yolks:debian
+    startup: ./bin/x64/factorio --start-server
+    memory: 2000
+
+- name: Give it more memory later
+  jochocki.pterodactyl.pterodactyl_build:
+    server: Factorio
+    memory: 4000
 ```
 
 ## Mods
