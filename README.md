@@ -16,6 +16,7 @@ Minecraft needs.
 | `pterodactyl_build` | Build Configuration | CPU, memory, disk, IO, swap, and the backup, database and allocation limits. |
 | `pterodactyl_startup` | Startup | Docker image, startup command and egg variables, with an optional reinstall. |
 | `pterodactyl_power` | Console | Starts, stops, restarts or kills a server. |
+| `pterodactyl_egg_info` | Nests, Eggs | Read-only. Lists eggs, asks the registries whether their install and runtime images still exist, and compares an egg with its exported file on GitHub. |
 | `minecraft_server` | all of them | Turns a Minecraft version and loader into the right egg, Java image and variables, then converges the server, its mods and its power state in the right order. |
 
 Ansible modules can't call each other, so the layering is in the code: every
@@ -167,6 +168,32 @@ unknown one, naming it, before it changes anything.
   the new version are installed first, and then the server starts. A running
   server is restarted when its mods changed. If the mods fail to install, the
   server is left stopped, not booted without them.
+
+## Eggs
+
+The Application API can't create or update an egg, so nothing here changes one.
+`pterodactyl_egg_info` is the read-only half. The panel refreshes the eggs it ships
+on every start, but an egg imported by hand is never refreshed, and what it names
+can disappear: a Fabric egg's install container, `openjdk:11-jdk-slim`, was removed
+from Docker Hub, and the failure only showed when a reinstall tried to pull it.
+
+```yaml
+- name: Does any egg point at an image that no longer exists?
+  jochocki.pterodactyl.pterodactyl_egg_info:
+    fail_on_drift: true
+
+- name: Has the Fabric egg fallen behind the maintained one?
+  jochocki.pterodactyl.pterodactyl_egg_info:
+    name: Fabric
+    source: minecraft/java/fabric/egg-fabric.json   # in pterodactyl/game-eggs
+    ref: main                                        # pin a commit to keep it stable
+```
+
+It reports every difference in the install container, entrypoint and script, the
+startup command, the runtime images and each variable's default, rules and
+visibility, and with `--diff` shows the install script as a unified diff. It
+doesn't compare config files or console log patterns. To apply a newer egg, update
+the existing egg from the file in the panel's admin UI.
 
 ## Check mode and `--diff`
 

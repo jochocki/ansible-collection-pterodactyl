@@ -38,6 +38,18 @@ def request(method, url, headers=None, data=None, timeout=60, validate_certs=Tru
         raise HttpError(0, str(exc.reason), url)
 
 
+def request_with_headers(method, url, headers=None, data=None, timeout=60, validate_certs=True):
+    """Like request, but returns (status, body bytes, headers) with lower-case header names."""
+    try:
+        resp = open_url(url, method=method, headers=headers or {}, data=data, timeout=timeout,
+                        validate_certs=validate_certs, follow_redirects="all")
+        return resp.getcode(), resp.read(), {k.lower(): v for k, v in resp.headers.items()}
+    except HTTPError as exc:
+        return exc.code, exc.read(), {k.lower(): v for k, v in (exc.headers or {}).items()}
+    except URLError as exc:
+        raise HttpError(0, str(exc.reason), url)
+
+
 def get_json(url, headers=None, timeout=60, validate_certs=True, http=request):
     status, body = http("GET", url, headers, None, timeout, validate_certs)
     if status != 200:

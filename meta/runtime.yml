@@ -8,4 +8,5 @@ action_groups:
     - pterodactyl_build
     - pterodactyl_startup
     - pterodactyl_power
+    - pterodactyl_egg_info
     - minecraft_server

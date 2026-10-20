@@ -100,6 +100,16 @@ class PterodactylClient(object):
         doc = self.call("GET", "/api/application/servers/%s" % server_id, params={"include": "allocations"})
         return [a["attributes"] for a in doc["attributes"]["relationships"]["allocations"]["data"]]
 
+    def egg(self, nest_id, egg_id):
+        """One egg as the API returns it, with its variables attached under "variables"."""
+        doc = self.call("GET", "/api/application/nests/%s/eggs/%s" % (nest_id, egg_id), params={"include": "variables"})
+        egg = dict(doc["attributes"], nest=nest_id)
+        egg["variables"] = [v["attributes"] for v in egg.get("relationships", {}).get("variables", {}).get("data", [])]
+        return egg
+
+    def nests(self):
+        return self.paginate("/api/application/nests")
+
     def egg_variables(self, nest_id, egg_id):
         """An egg's variables: env_variable, default_value, rules."""
         doc = self.call("GET", "/api/application/nests/%s/eggs/%s" % (nest_id, egg_id), params={"include": "variables"})
