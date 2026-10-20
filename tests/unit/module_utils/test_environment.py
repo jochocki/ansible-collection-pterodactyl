@@ -109,6 +109,26 @@ class ExplicitEnvironment(unittest.TestCase):
         with self.assertRaisesRegex(PterodactylError, "server.jar was not rewritten"):
             self.migrate([OLD_JAR], reinstall=True)
 
+    def test_a_server_on_the_old_name_is_told_exactly_what_to_set(self):
+        # The maintained egg's install just wrote server.jar, and this server still names the launcher.
+        c = FakeClient(servers=[server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
+                                                   "environment": {"MC_VERSION": "26.3", "SERVER_JARFILE": OLD_JAR}})],
+                       state="running", root=root(OLD_JAR))
+        c.egg_defaults["SERVER_JARFILE"] = "server.jar"
+        c.rewrites = ["server.jar"]
+        with self.assertRaisesRegex(PterodactylError, "egg's own SERVER_JARFILE is server.jar.*"
+                                    "Set environment SERVER_JARFILE: server.jar.*not needed again"):
+            ops.ensure_minecraft_server(c, spec(reinstall=True), sleep=no_sleep)
+        self.assertNotIn(("power", "start"), c.calls)
+
+    def test_no_such_hint_when_the_egg_default_is_the_same_name(self):
+        c = FakeClient(servers=[server()], state="offline", root=root(OLD_JAR))
+        c.rewrites = []
+        with self.assertRaises(PterodactylError) as ctx:
+            ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        self.assertIn("install script most likely did not run", str(ctx.exception))
+        self.assertNotIn("older version of the egg", str(ctx.exception))
+
     def test_the_diff_shows_the_variable(self):
         _, out = self.migrate([])
         self.assertEqual(out["diff"]["before"]["startup"]["environment.SERVER_JARFILE"], OLD_JAR)

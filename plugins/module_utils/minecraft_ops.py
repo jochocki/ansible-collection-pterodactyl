@@ -69,7 +69,18 @@ def jar_stamp(client, server, name):
     return None
 
 
-def check_install_ran(client, server, name, before):
+def _eggs_own_jar(client, server, jar_var, name):
+    """The jar the egg itself names, if it differs from this server's and is on disk: the usual cause."""
+    try:
+        default = next((v["default_value"] for v in client.egg_variables(server["nest"], server["egg"])
+                        if v["env_variable"] == jar_var), None)
+        present = {f["name"] for f in client.list_files(server["identifier"], "/") or []}
+    except (PterodactylError, KeyError):
+        return None
+    return default if default and default != name and default in present else None
+
+
+def check_install_ran(client, server, name, before, jar_var=None):
     """The panel does not always notice an install that never ran, so look for its effect.
 
     A failed image pull, for instance, leaves the panel reporting success. A real install
@@ -79,6 +90,14 @@ def check_install_ran(client, server, name, before):
         return  # nothing to look for
     after = jar_stamp(client, server, name)
     if after is None or after == before:
+        newer = _eggs_own_jar(client, server, jar_var, name) if jar_var else None
+        if newer:
+            raise PterodactylError(
+                "the reinstall finished, but %s was not rewritten. The egg's own %s is %s, that file is now on "
+                "the server, and this server still names %s, so it is on an older version of the egg. Set "
+                "environment %s: %s for this server (a reinstall is not needed again). The server is left stopped."
+                % (name, jar_var, newer, name, jar_var, newer)
+            )
         raise PterodactylError(
             "the reinstall finished, but %s was not rewritten, so the install script most likely did not run "
             "(a failed image pull does this and the panel still reports success). Wings keeps the output "
@@ -186,7 +205,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             stamp = jar_stamp(client, server, jar)
             client.reinstall(server["id"])
             wait_installed(client, identifier, "reinstall", sleep)
-            check_install_ran(client, server, jar, stamp)
+            check_install_ran(client, server, jar, stamp, row["jar_var"])
             if restore_power and previous_power == "started":
                 set_power(client, identifier, "started", sleep=sleep)
                 power_after = "started"
