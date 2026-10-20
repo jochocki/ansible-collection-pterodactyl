@@ -88,8 +88,14 @@ options:
       - The allocation IP. Only needed when a port exists on more than one IP on the node.
       - It applies to every port given, so all of them must be on this IP.
     type: str
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: full
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
+  - ansible.builtin.action_common_attributes
 author:
   - Jordan Ochocki (@jochocki)
 """
@@ -142,6 +148,7 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.common import (
     build_client,
     connection_spec,
+    diff_result,
     summarize,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
@@ -149,6 +156,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
     create_server,
     ensure_details,
     find_server,
+    new_diff,
 )
 
 CREATE_REQUIRED = ("owner", "node", "egg", "docker_image", "startup")
@@ -188,22 +196,29 @@ def main():
         if p["state"] == "absent":
             if server and not module.check_mode:
                 client.delete_server(server["id"])
-            module.exit_json(changed=server is not None, actions=["delete server"] if server else [])
+            module.exit_json(changed=server is not None, actions=["delete server"] if server else [],
+                             **(diff_result(p["name"], {"before": {"server": server["name"]}, "after": {}})
+                                if server and module._diff else {}))
 
+        diff = new_diff()
         if server is not None:
             actions = ensure_details(
                 client, server,
                 {k: p[k] for k in ("name", "external_id", "description", "owner")},
-                check_mode=module.check_mode,
+                check_mode=module.check_mode, diff=diff,
             )
-            module.exit_json(changed=bool(actions), actions=actions, server=summarize(server))
+            module.exit_json(changed=bool(actions), actions=actions, server=summarize(server),
+                             **(diff_result(p["name"], diff) if module._diff else {}))
 
         missing = [k for k in CREATE_REQUIRED if p[k] is None]
         if missing:
             module.fail_json(msg="server %r does not exist; to create it also set: %s" % (p["name"], ", ".join(missing)))
         actions = ["create server %s" % p["name"]]
+        diff["after"]["server"] = {k: p[k] for k in ("name", "external_id", "owner", "node", "egg", "docker_image",
+                                                     "port", "additional_ports") if p[k] is not None}
+        extra = diff_result(p["name"], diff) if module._diff else {}
         if module.check_mode:
-            module.exit_json(changed=True, actions=actions)
+            module.exit_json(changed=True, actions=actions, **extra)
         created = create_server(client, {
             "name": p["name"],
             "external_id": p["external_id"],
@@ -220,7 +235,7 @@ def main():
             "additional_ports": p["additional_ports"],
             "ip": p["ip"],
         })
-        module.exit_json(changed=True, actions=actions, server=summarize(created))
+        module.exit_json(changed=True, actions=actions, server=summarize(created), **extra)
     except PterodactylError as exc:
         module.fail_json(msg=str(exc))
 

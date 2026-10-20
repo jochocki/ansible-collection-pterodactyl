@@ -149,6 +149,18 @@ unknown one, naming it, before it changes anything.
   server is restarted when its mods changed. If the mods fail to install, the
   server is left stopped, not booted without them.
 
+## Check mode and `--diff`
+
+Every module except `pterodactyl_power` supports `--check` and `--diff`. With
+`--diff` a change is shown as a before and after of the panel's state: the
+details, build limits, ports, startup (image and version variables) and, for
+`minecraft_server`, the exact mod files that would be added and removed. Without
+`--diff`, each task's result lists what it did in `actions` (visible with `-v`).
+
+```bash
+ansible-playbook site.yml --check --diff
+```
+
 ## Connection
 
 Every module takes `panel_url`, `api_key` and `validate_certs`. `panel_url` and

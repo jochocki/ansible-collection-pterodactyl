@@ -113,8 +113,14 @@ options:
     description: Check O(version) against Mojang's release manifest.
     type: bool
     default: true
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: full
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
+  - ansible.builtin.action_common_attributes
 author:
   - Jordan Ochocki (@jochocki)
 """
@@ -190,6 +196,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils import http a
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.common import (
     build_client,
     connection_spec,
+    diff_result,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft import (
     LOADERS,
@@ -243,7 +250,9 @@ def main():
             server = find_server(client.servers(), external_id=external_id, name=p["name"])
             if server and not module.check_mode:
                 client.delete_server(server["id"])
-            module.exit_json(changed=server is not None, actions=["delete server"] if server else [])
+            module.exit_json(changed=server is not None, actions=["delete server"] if server else [],
+                             **(diff_result(p["name"], {"before": {"server": server["name"]}, "after": {}})
+                                if server and module._diff else {}))
 
         if p["validate_version"]:
             check_version(p["version"], release_ids(phttp.get_json(MOJANG_MANIFEST)))
@@ -275,6 +284,9 @@ def main():
         server = result.pop("server")
         if server:
             result["identifier"] = server.get("identifier")
+        diff = result.pop("diff")
+        if module._diff:
+            result.update(diff_result(p["name"], diff))
         module.exit_json(**result)
     except (PterodactylError, phttp.HttpError, ValueError) as exc:
         module.fail_json(msg=str(exc))

@@ -56,7 +56,7 @@ def resolve_mods(version, loader, projects, fetch):
     return wanted
 
 
-def apply_mods(client, identifier, wanted, purge=True, check_mode=False):
+def apply_mods(client, identifier, wanted, purge=True, check_mode=False, diff=None):
     """Install, verify and (optionally) prune. Returns a result dict."""
     present = client.list_files(identifier, MODS_DIR)
     created_dir = False
@@ -71,6 +71,12 @@ def apply_mods(client, identifier, wanted, purge=True, check_mode=False):
     replace = [p["filename"] for p in pull if any(f["name"] == p["filename"] for f in present)]
     removals = sorted(set(replace) | (set(stale) if purge else set()))
     changed = bool(pull or removals or created_dir)
+
+    if changed and diff is not None:
+        names = sorted(f["name"] for f in present if f["name"].endswith(".jar"))
+        after = sorted((set(names) | {p["filename"] for p in pull}) - set(removals))
+        diff["before"].setdefault("mods", {})["files"] = names
+        diff["after"].setdefault("mods", {})["files"] = after
 
     result = {
         "changed": changed,
@@ -96,6 +102,6 @@ def apply_mods(client, identifier, wanted, purge=True, check_mode=False):
     return result
 
 
-def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False):
+def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False, diff=None):
     """Resolve, then apply."""
-    return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode)
+    return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode, diff)

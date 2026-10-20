@@ -65,8 +65,14 @@ options:
       - The allocation IP. Only needed when a port exists on more than one IP on the node.
       - It applies to every port given, so all of them must be on this IP.
     type: str
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: full
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
+  - ansible.builtin.action_common_attributes
 author:
   - Jordan Ochocki (@jochocki)
 """
@@ -97,9 +103,10 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.common import (
     build_client,
     connection_spec,
+    diff_result,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
-from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import ensure_build, get_server
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import ensure_build, get_server, new_diff
 
 
 def main():
@@ -123,6 +130,7 @@ def main():
     try:
         client = build_client(module)
         server = get_server(client, p["server"])
+        diff = new_diff()
         changes, actions = ensure_build(
             client, server,
             dict(
@@ -130,9 +138,10 @@ def main():
                                    "port", "additional_ports", "ip")},
                 allocations=p["allocation_limit"],
             ),
-            check_mode=module.check_mode,
+            check_mode=module.check_mode, diff=diff,
         )
-        module.exit_json(changed=bool(changes), changes=changes, actions=actions)
+        module.exit_json(changed=bool(changes), changes=changes, actions=actions,
+                         **(diff_result(p["server"], diff) if module._diff else {}))
     except PterodactylError as exc:
         module.fail_json(msg=str(exc))
 

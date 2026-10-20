@@ -35,8 +35,14 @@ options:
     description: Reinstall the server and wait for it when something changed.
     type: bool
     default: false
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: full
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
+  - ansible.builtin.action_common_attributes
 author:
   - Jordan Ochocki (@jochocki)
 """
@@ -63,9 +69,10 @@ from ansible.module_utils.basic import AnsibleModule
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.common import (
     build_client,
     connection_spec,
+    diff_result,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
-from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import ensure_startup, get_server
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import ensure_startup, get_server, new_diff
 
 
 def main():
@@ -82,15 +89,17 @@ def main():
     try:
         client = build_client(module)
         server = get_server(client, p["server"])
+        diff = new_diff()
         changes, actions = ensure_startup(
             client, server,
             image=p["docker_image"],
             startup=p["startup"],
             environment={k: str(v) for k, v in p["environment"].items()} if p["environment"] else None,
             reinstall=p["reinstall"],
-            check_mode=module.check_mode,
+            check_mode=module.check_mode, diff=diff,
         )
-        module.exit_json(changed=bool(changes), changes=changes, actions=actions)
+        module.exit_json(changed=bool(changes), changes=changes, actions=actions,
+                         **(diff_result(p["server"], diff) if module._diff else {}))
     except PterodactylError as exc:
         module.fail_json(msg=str(exc))
 

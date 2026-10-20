@@ -22,7 +22,9 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
     ensure_build,
     ensure_details,
     find_server,
+    new_diff,
     power_label,
+    record,
     rotate_and_backup,
     set_power,
     update_startup,
@@ -47,9 +49,11 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
 
     spec keys: name, external_id, loader, version, node, owner, limits (dict
     of memory/swap/disk/io/cpu/backups, any may be None).
-    Returns {changed, actions, server, previous_power, power_after}. Both power values are
-    "started" or "stopped" and describe the real server, changed or not.
+    Returns {changed, actions, server, previous_power, power_after, diff}. Both power values are
+    "started" or "stopped" and describe the real server, changed or not. diff is the
+    {before, after} of everything that changed, for --diff.
     """
+    diff = new_diff()
     loader = spec["loader"]
     row = LOADERS[loader]
     image = java_image(spec["version"])
@@ -59,9 +63,12 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
 
     if server is None:
         actions.append("create server %s (%s %s, %s)" % (spec["name"], loader, spec["version"], image))
+        diff["after"]["server"] = {"name": spec["name"], "loader": loader, "version": spec["version"],
+                                   "docker_image": image, "node": spec["node"],
+                                   "limits": {k: v for k, v in want.items() if v is not None}}
         if check_mode:
             return {"changed": True, "actions": actions, "server": None, "previous_power": "stopped",
-                    "power_after": "stopped"}
+                    "power_after": "stopped", "diff": diff}
         created = create_server(client, {
             "name": spec["name"],
             "external_id": spec.get("external_id"),
@@ -78,7 +85,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             "ip": want.get("ip"),
         }, sleep=sleep)
         return {"changed": True, "actions": actions, "server": created,
-                "previous_power": "stopped", "power_after": "stopped"}
+                "previous_power": "stopped", "power_after": "stopped", "diff": diff}
 
     if server.get("egg") is not None:
         egg_ids = [e["id"] for e in client.eggs() if e["name"] == row["egg"]]
@@ -91,14 +98,18 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     previous_power = power_label(client.power_state(identifier))
     power_after = previous_power
 
-    actions += ensure_details(client, server, {"external_id": spec.get("external_id")}, check_mode)
-    changes, build_actions = ensure_build(client, server, want, check_mode)
+    actions += ensure_details(client, server, {"external_id": spec.get("external_id")}, check_mode, diff)
+    changes, build_actions = ensure_build(client, server, want, check_mode, diff)
     actions += build_actions
 
     version_changed = current_version(server, loader) != spec["version"]
     image_changed = (server.get("container") or {}).get("image") != image
     if version_changed or image_changed:
         actions.append("set %s %s on %s" % (loader, spec["version"], image))
+        if image_changed:
+            record(diff, "startup", "docker_image", (server.get("container") or {}).get("image"), image)
+        if version_changed:
+            record(diff, "startup", LOADERS[loader]["version_var"], current_version(server, loader), spec["version"])
     if version_changed:
         actions.append("backup, reinstall")
 
@@ -131,6 +142,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         "server": server,
         "previous_power": previous_power,
         "power_after": power_after,
+        "diff": diff,
     }
 
 
@@ -157,9 +169,11 @@ def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mo
     if server is None:  # check mode, server not created yet
         result["mods"] = None
         result["actions"].append("install %d mods once the server exists" % len(wanted))
+        result["diff"]["after"]["server"]["mods"] = sorted(w["filename"] for w in wanted)
         return result
 
-    outcome = apply_mods(client, server["identifier"], wanted, purge=purge, check_mode=check_mode)
+    outcome = apply_mods(client, server["identifier"], wanted, purge=purge, check_mode=check_mode,
+                         diff=result["diff"])
     result["mods"] = outcome
     if outcome["changed"]:
         result["changed"] = True

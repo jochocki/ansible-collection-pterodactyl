@@ -5,6 +5,7 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
+import json
 import os
 
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import (
@@ -18,6 +19,19 @@ def connection_spec():
         api_key=dict(type="str", no_log=True, default=os.environ.get("PTERODACTYL_API_KEY")),
         validate_certs=dict(type="bool", default=True),
     )
+
+
+def diff_result(name, diff):
+    """The {before, after} of a diff, as the line-oriented text --diff shows.
+
+    Returns {} for an empty diff, so it can be merged into exit_json unconditionally.
+    """
+    if not diff or not (diff["before"] or diff["after"]):
+        return {}
+    def render(side):
+        return json.dumps(side, indent=2, sort_keys=True) + "\n"
+    return {"diff": {"before": render(diff["before"]), "after": render(diff["after"]),
+                     "before_header": "%s (panel, before)" % name, "after_header": "%s (panel, after)" % name}}
 
 
 def summarize(server):

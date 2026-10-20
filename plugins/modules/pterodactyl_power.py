@@ -31,8 +31,14 @@ options:
     description: Seconds to wait.
     type: int
     default: 120
+attributes:
+  check_mode:
+    support: full
+  diff_mode:
+    support: none
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
+  - ansible.builtin.action_common_attributes
 author:
   - Jordan Ochocki (@jochocki)
 """

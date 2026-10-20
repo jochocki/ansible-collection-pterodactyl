@@ -92,6 +92,19 @@ def set_power(client, identifier, state, wait=True, timeout=120, interval=3, sle
     return True
 
 
+# -- diff -------------------------------------------------------------------
+def new_diff():
+    return {"before": {}, "after": {}}
+
+
+def record(diff, section, key, before, after):
+    """Note one change for --diff. A None collector (no diff wanted) is ignored."""
+    if diff is None:
+        return
+    diff["before"].setdefault(section, {})[key] = before
+    diff["after"].setdefault(section, {})[key] = after
+
+
 # -- lookup -----------------------------------------------------------------
 def get_server(client, ref):
     """The server a name, identifier or external ID points at, or an error."""
@@ -163,6 +176,11 @@ def plan_allocations(node_allocs, own, primary_id, port=None, additional_ports=N
         keep = {primary} | {w["id"] for w in wanted}
         remove = [a for a in own if a["id"] not in keep]
 
+    ports = {a["id"]: a["port"] for a in list(node_allocs) + list(own)}
+    held_after = (own_ids - {a["id"] for a in remove}) | {a["id"] for a in add}
+    before_extras = sorted(a["port"] for a in own if a["id"] != primary_id)
+    after_extras = sorted(ports[i] for i in held_after if i != primary)
+
     changes = {}
     if primary != primary_id:
         changes["port"] = target["port"]
@@ -176,6 +194,8 @@ def plan_allocations(node_allocs, own, primary_id, port=None, additional_ports=N
         "add": [a["id"] for a in add],
         "remove": [a["id"] for a in remove],
         "changes": changes,
+        "before": {"port": ports.get(primary_id), "additional_ports": before_extras},
+        "after": {"port": ports[primary], "additional_ports": after_extras},
     }
 
 
@@ -247,11 +267,15 @@ def details_diff(server, want):
     return {k: v for k, v in want.items() if v is not None and current[k] != v}
 
 
-def ensure_details(client, server, want, check_mode=False):
+def ensure_details(client, server, want, check_mode=False, diff=None):
     """Converge name, external_id, description and owner. Returns action strings."""
     changes = details_diff(server, want)
     if not changes:
         return []
+    current = {"name": server["name"], "external_id": server.get("external_id"),
+               "description": server.get("description") or "", "owner": server["user"]}
+    for key, new in changes.items():
+        record(diff, "details", key, current[key], new)
     if not check_mode:
         client.update_details(server["id"], {
             "name": changes.get("name", server["name"]),
@@ -296,7 +320,7 @@ def build_payload(server, changes, plan=None):
     return payload
 
 
-def ensure_build(client, server, want, check_mode=False):
+def ensure_build(client, server, want, check_mode=False, diff=None):
     """Converge limits and allocations (the game port and any additional ports).
 
     `want` holds only what the user set. Besides the limit keys it may carry
@@ -317,6 +341,13 @@ def ensure_build(client, server, want, check_mode=False):
         changes.update(plan["changes"])
     if not changes:
         return {}, []
+    for key, new in limits_diff(server, want).items():
+        old = server["limits"].get(key) if key in LIMIT_KEYS else server["feature_limits"].get(key)
+        record(diff, "build", key, old, new)
+    if plan and plan["changes"]:
+        for key in ("port", "additional_ports"):
+            if plan["before"][key] != plan["after"][key]:
+                record(diff, "ports", key, plan["before"][key], plan["after"][key])
     if not check_mode:
         client.update_build(server["id"], build_payload(server, changes, plan if plan and plan["changes"] else None))
         if plan and plan["changes"]:
@@ -353,7 +384,7 @@ def update_startup(client, server, image=None, startup=None, environment=None):
 
 
 def ensure_startup(client, server, image=None, startup=None, environment=None, reinstall=False,
-                   check_mode=False, sleep=time.sleep):
+                   check_mode=False, sleep=time.sleep, diff=None):
     """Converge the Docker image, startup command and environment variables.
 
     Returns (changes, actions). With reinstall, a change also reinstalls the
@@ -362,6 +393,13 @@ def ensure_startup(client, server, image=None, startup=None, environment=None, r
     changes = startup_diff(server, image, startup, environment)
     if not changes:
         return {}, []
+    container = server.get("container") or {}
+    if "image" in changes:
+        record(diff, "startup", "docker_image", container.get("image"), changes["image"])
+    if "startup" in changes:
+        record(diff, "startup", "startup", container.get("startup_command"), changes["startup"])
+    for key, new in changes.get("environment", {}).items():
+        record(diff, "startup", "environment.%s" % key, (container.get("environment") or {}).get(key), new)
     actions = ["update startup: %s" % ", ".join(sorted(changes))]
     if not check_mode:
         update_startup(client, server, image, startup, environment)
