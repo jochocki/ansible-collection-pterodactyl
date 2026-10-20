@@ -190,9 +190,11 @@ from Docker Hub, and the failure only showed when a reinstall tried to pull it.
 ```
 
 It reports every difference in the install container, entrypoint and script, the
-startup command, the runtime images and each variable's default, rules and
-visibility, and with `--diff` shows the install script as a unified diff. It
-doesn't compare config files or console log patterns. To apply a newer egg, update
+startup command, the runtime images, the config Wings reads live (the files it
+rewrites at start, the "done" text, the log location and the stop command), the
+file denylist and each variable's default, rules and visibility, and with `--diff`
+shows the install script as a unified diff. Features are compared only if the
+panel's API returns them, which it does not appear to. To apply a newer egg, update
 the existing egg from the file in the panel's admin UI.
 
 ## Check mode and `--diff`

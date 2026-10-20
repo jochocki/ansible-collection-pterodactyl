@@ -5,6 +5,8 @@ from __future__ import absolute_import, division, print_function
 
 __metaclass__ = type
 
+import json
+
 from ansible.module_utils.six.moves.urllib.parse import quote
 
 RAW = "https://raw.githubusercontent.com/%s/%s/%s"
@@ -17,6 +19,16 @@ def source_url(repository, ref, path):
 def _script(text):
     """Line-ending and trailing-whitespace noise is not drift."""
     return "\n".join(line.rstrip() for line in (text or "").replace("\r\n", "\n").replace("\r", "\n").strip().split("\n"))
+
+
+def _json(value):
+    """Egg config arrives as JSON text in an export file and as a parsed object from the API."""
+    if isinstance(value, str):
+        try:
+            return json.loads(value) if value.strip() else None
+        except ValueError:
+            return value
+    return value or None
 
 
 def _bool(value):
@@ -44,8 +56,10 @@ def drift(panel, source):
     panel is the egg as the API returns it, with its variables under "variables".
     source is the parsed JSON file. Each result is {field, panel, source}. What is
     compared: the install container, entrypoint and script, the startup command, the
-    runtime images, and each variable's name, default, rules and visibility.
-    Config files and the console log patterns are not.
+    runtime images, the config Wings reads live (files rewritten at start, the "done"
+    text, log location, stop command), the file denylist, and each variable's default,
+    rules and visibility. Features are compared only when the panel's API returns them,
+    which it does not appear to.
     """
     found = []
     script = panel.get("script") or {}
@@ -63,6 +77,16 @@ def drift(panel, source):
                       "panel": "%d lines" % len(have_script.split("\n")), "source": "%d lines" % len(want_script.split("\n")),
                       "panel_text": have_script, "source_text": want_script})
     note("startup", panel.get("startup"), source.get("startup"))
+
+    cfg, src_cfg = panel.get("config") or {}, source.get("config") or {}
+    for key in ("files", "startup", "logs"):
+        note("config_%s" % key, _json(cfg.get(key)), _json(src_cfg.get(key)))
+    note("config_stop", cfg.get("stop"), src_cfg.get("stop"))
+    denylist = panel.get("file_denylist") if panel.get("file_denylist") is not None else cfg.get("file_denylist")
+    if denylist is not None:
+        note("file_denylist", sorted(denylist), sorted(source.get("file_denylist") or []))
+    if panel.get("features") is not None:
+        note("features", sorted(panel["features"]), sorted(source.get("features") or []))
 
     have_images = set((panel.get("docker_images") or {}).values())
     want_images = set((source.get("docker_images") or {}).values())

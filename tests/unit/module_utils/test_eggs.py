@@ -109,6 +109,51 @@ class Drift(unittest.TestCase):
         self.assertEqual(eggs.drift(bare, {"variables": []}), [])
 
 
+class Config(unittest.TestCase):
+    """What Wings and the panel read live, so an upload changes every server at once."""
+
+    def pair(self):
+        p, s = panel_egg(), source_egg()
+        p["config"] = {"files": {"server.properties": {"parser": "properties", "find": {"server-ip": "0.0.0.0"}}},
+                       "startup": {"done": ")! For help"}, "logs": {"location": "logs/latest.log"}, "stop": "stop"}
+        s["config"] = {"files": '{"server.properties": {"parser": "properties", "find": {"server-ip": "0.0.0.0"}}}',
+                       "startup": '{"done": ")! For help"}', "logs": '{"location": "logs/latest.log"}', "stop": "stop"}
+        return p, s
+
+    def test_the_api_object_and_the_export_text_compare_equal(self):
+        self.assertEqual(eggs.drift(*self.pair()), [])
+
+    def test_a_local_customisation_is_found(self):
+        # your egg forces enable-query=true; the maintained one does not
+        p, s = self.pair()
+        p["config"]["files"]["server.properties"]["find"]["enable-query"] = "true"
+        (d,) = eggs.drift(p, s)
+        self.assertEqual(d["field"], "config_files")
+        self.assertIn("enable-query", d["panel"]["server.properties"]["find"])
+        self.assertNotIn("enable-query", d["source"]["server.properties"]["find"])
+
+    def test_stop_command_and_done_text(self):
+        p, s = self.pair()
+        s["config"]["stop"] = "end"
+        s["config"]["startup"] = '{"done": "Done ("}'
+        self.assertEqual(fields(eggs.drift(p, s)), {"config_stop", "config_startup"})
+
+    def test_denylist_from_either_place_and_features_only_when_returned(self):
+        p, s = self.pair()
+        s["file_denylist"] = ["a.txt"]
+        self.assertEqual(eggs.drift(p, s), [])  # the API did not say, so no claim
+        p["config"]["file_denylist"] = []
+        self.assertEqual(fields(eggs.drift(p, s)), {"file_denylist"})
+        p2, s2 = self.pair()
+        s2["features"] = ["eula"]
+        self.assertEqual(eggs.drift(p2, s2), [])
+        p2["features"] = []
+        self.assertEqual(fields(eggs.drift(p2, s2)), {"features"})
+
+    def test_an_egg_with_no_config_matches_a_source_with_none(self):
+        self.assertEqual(eggs.drift(panel_egg(), source_egg()), [])
+
+
 class Info(unittest.TestCase):
     def test_install_and_runtime_images(self):
         info = eggs.egg_info(panel_egg())

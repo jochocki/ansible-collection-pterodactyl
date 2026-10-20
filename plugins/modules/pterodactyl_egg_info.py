@@ -15,11 +15,11 @@ description:
     until then.
   - With O(name) and O(source), fetches the egg's exported JSON from a GitHub repository, such as
     C(minecraft/java/fabric/egg-fabric.json) in C(pterodactyl/game-eggs), and reports every
-    difference from the egg on the panel.
+    difference from the egg on the panel, including the config Wings reads live.
   - It only reads. The Application API cannot create or update an egg, so applying an update is
     done in the panel's admin UI. Eggs the panel ships are refreshed on every start; eggs
     imported by hand never are, which is what this module is for.
-  - An egg's config files and its console log patterns are not compared.
+  - Features are compared only when the panel's API returns them. It does not appear to, so a difference in them is not reported.
 options:
   name:
     description: Only this egg. Needed with O(source). Without it every egg is listed.
