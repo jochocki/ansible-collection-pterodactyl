@@ -91,6 +91,15 @@ class PterodactylClient(object):
                 eggs.append(egg["attributes"])
         return eggs
 
+    def node_allocations(self, node_id):
+        """Every allocation on a node: id, ip, port and whether it is assigned."""
+        return self.paginate("/api/application/nodes/%s/allocations" % node_id)
+
+    def server_allocations(self, server_id):
+        """The allocations assigned to one server (its primary among them)."""
+        doc = self.call("GET", "/api/application/servers/%s" % server_id, params={"include": "allocations"})
+        return [a["attributes"] for a in doc["attributes"]["relationships"]["allocations"]["data"]]
+
     def free_allocation(self, node_id):
         for alloc in self.paginate("/api/application/nodes/%s/allocations" % node_id):
             if not alloc.get("assigned"):

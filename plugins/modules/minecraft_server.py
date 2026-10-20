@@ -70,6 +70,21 @@ options:
   backups:
     description: Backup slots.
     type: int
+  port:
+    description:
+      - The game port. It must already exist as an allocation on the node.
+      - For a new server it picks the allocation instead of the first free one. For an existing
+        server it moves the server to that port. Leave it out to leave the port alone.
+    type: int
+  additional_ports:
+    description: The complete set of additional ports. See M(jochocki.pterodactyl.pterodactyl_build).
+    type: list
+    elements: int
+  ip:
+    description:
+      - The allocation IP. Only needed when a port exists on more than one IP on the node.
+      - It applies to every port given, so all of them must be on this IP.
+    type: str
   backup_before_upgrade:
     description: Back the server up before a version change.
     type: bool
@@ -207,6 +222,9 @@ def main():
         swap=dict(type="int"),
         io=dict(type="int"),
         backups=dict(type="int"),
+        port=dict(type="int"),
+        additional_ports=dict(type="list", elements="int"),
+        ip=dict(type="str"),
         backup_before_upgrade=dict(type="bool", default=True),
         mods=dict(type="list", elements="str"),
         purge=dict(type="bool", default=True),
@@ -244,7 +262,9 @@ def main():
                 "version": p["version"],
                 "node": p["node"],
                 "owner": p["owner"],
-                "limits": {k: p[k] for k in ("memory", "cpu", "disk", "swap", "io", "backups")},
+                # The build tab: limits and ports.
+                "limits": {k: p[k] for k in ("memory", "cpu", "disk", "swap", "io", "backups",
+                                             "port", "additional_ports", "ip")},
             },
             mods=p["mods"],
             fetch=fetch,

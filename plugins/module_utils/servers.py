@@ -112,6 +112,100 @@ def wait_installed(client, identifier, what="install", sleep=time.sleep):
     wait_until(lambda: not client.is_installing(identifier), 600, 10, "%s to finish" % what, sleep)
 
 
+# -- allocations (ports) ----------------------------------------------------
+def _describe(allocs):
+    return ", ".join(sorted("%s:%s" % (a["ip"], a["port"]) for a in allocs))
+
+
+def pick_allocation(port, own, free, ip=None):
+    """The allocation for a port: one the server already holds, else a free one.
+
+    Raises when there is none, or when the port exists on several IPs and `ip`
+    doesn't say which.
+    """
+    for pool in (own, free):
+        hits = [a for a in pool if a["port"] == port and (ip is None or a["ip"] == ip)]
+        if len(hits) > 1:
+            raise PterodactylError("port %s exists on several IPs (%s); set ip" % (port, _describe(hits)))
+        if hits:
+            return hits[0]
+    raise PterodactylError(
+        "the node has no free allocation for port %s%s. It may belong to another server, or it may not "
+        "exist; add it under Nodes, Allocation in the panel" % (port, " on %s" % ip if ip else "")
+    )
+
+
+def plan_allocations(node_allocs, own, primary_id, port=None, additional_ports=None, ip=None):
+    """What the build call must change to give a server these ports.
+
+    port is the primary (game) port, additional_ports the complete set of the
+    others, and either may be None to leave that part alone. Returns
+    {allocation, add, remove, changes}, where changes is empty when nothing
+    needs to happen. Removed ports are only ever those no longer listed.
+    """
+    free = [a for a in node_allocs if not a.get("assigned")]
+    own_ids = {a["id"] for a in own}
+    target = pick_allocation(port, own, free, ip) if port is not None else None
+    primary = target["id"] if target else primary_id
+
+    wanted = []
+    if additional_ports is not None:
+        for extra in additional_ports:
+            alloc = pick_allocation(extra, own, free, ip)
+            if alloc["id"] == primary:
+                raise PterodactylError("port %s is the primary port, so it can't also be an additional port" % extra)
+            if alloc["id"] not in [w["id"] for w in wanted]:
+                wanted.append(alloc)
+
+    add = ([target] if target and target["id"] not in own_ids else []) + [w for w in wanted if w["id"] not in own_ids]
+    remove = []
+    if additional_ports is not None:
+        keep = {primary} | {w["id"] for w in wanted}
+        remove = [a for a in own if a["id"] not in keep]
+
+    changes = {}
+    if primary != primary_id:
+        changes["port"] = target["port"]
+    extras_added = [a for a in add if a is not target]
+    if extras_added:
+        changes["added_ports"] = sorted(a["port"] for a in extras_added)
+    if remove:
+        changes["removed_ports"] = sorted(a["port"] for a in remove)
+    return {
+        "allocation": primary,
+        "add": [a["id"] for a in add],
+        "remove": [a["id"] for a in remove],
+        "changes": changes,
+    }
+
+
+def verify_allocations(client, server, plan):
+    """The panel silently skips allocations it won't assign, so check it did."""
+    held = {a["id"] for a in client.server_allocations(server["id"])}
+    missing = [i for i in plan["add"] if i not in held]
+    lingering = [i for i in plan["remove"] if i in held]
+    if missing or lingering:
+        raise PterodactylError(
+            "the panel ignored part of the allocation change (not added: %s, not removed: %s); an allocation "
+            "may already be assigned to another server or sit on a different node" % (missing, lingering)
+        )
+
+
+def _creation_allocation(client, node_id, spec):
+    """The `allocation` block of a create call: the chosen ports, else the first free allocation."""
+    if spec.get("port") is None and spec.get("additional_ports") is None:
+        return {"default": client.free_allocation(node_id)}
+    if spec.get("port") is None:
+        raise PterodactylError("additional_ports needs port, the primary one, to create a server")
+    plan = plan_allocations(client.node_allocations(node_id), [], None, spec["port"],
+                            spec.get("additional_ports"), spec.get("ip"))
+    block = {"default": plan["allocation"]}
+    extras = [i for i in plan["add"] if i != plan["allocation"]]
+    if extras:
+        block["additional"] = extras
+    return block
+
+
 # -- create -----------------------------------------------------------------
 def create_server(client, spec, sleep=time.sleep):
     """Create a server and wait for the panel to install it.
@@ -133,7 +227,7 @@ def create_server(client, spec, sleep=time.sleep):
         "environment": spec.get("environment") or {},
         "limits": {k: limits.get(k, d) for k, d in (("memory", 1024), ("swap", 0), ("disk", 0), ("io", 500), ("cpu", 0))},
         "feature_limits": {k: features.get(k, 0) for k in ("databases", "allocations", "backups")},
-        "allocation": {"default": client.free_allocation(_only(client.nodes(), spec["node"], "node")["id"])},
+        "allocation": _creation_allocation(client, _only(client.nodes(), spec["node"], "node")["id"], spec),
         "start_on_completion": False,
     })
     # Files and power calls fail until the panel finishes installing it.
@@ -185,29 +279,48 @@ def limits_diff(server, want):
     return changes
 
 
-def build_payload(server, changes):
+def build_payload(server, changes, plan=None):
     limits = server["limits"]
     features = server["feature_limits"]
     payload = {
-        "allocation": server["allocation"],
+        "allocation": plan["allocation"] if plan else server["allocation"],
         "threads": limits.get("threads"),
         "oom_disabled": limits.get("oom_disabled", True),
         "feature_limits": {k: changes.get(k, features[k]) for k in FEATURE_KEYS},
     }
     payload.update({k: changes.get(k, limits[k]) for k in LIMIT_KEYS})
+    if plan and plan["add"]:
+        payload["add_allocations"] = plan["add"]
+    if plan and plan["remove"]:
+        payload["remove_allocations"] = plan["remove"]
     return payload
 
 
 def ensure_build(client, server, want, check_mode=False):
-    """Converge CPU, memory, disk, IO, swap and the feature limits.
+    """Converge limits and allocations (the game port and any additional ports).
 
-    Returns (changes, actions).
+    `want` holds only what the user set. Besides the limit keys it may carry
+    port, additional_ports and ip. The node's allocations are only read when
+    one of the ports is set. Returns (changes, actions).
     """
     changes = limits_diff(server, want)
+    plan = None
+    if want.get("port") is not None or want.get("additional_ports") is not None:
+        plan = plan_allocations(
+            client.node_allocations(server["node"]),
+            client.server_allocations(server["id"]),
+            server["allocation"],
+            port=want.get("port"),
+            additional_ports=want.get("additional_ports"),
+            ip=want.get("ip"),
+        )
+        changes.update(plan["changes"])
     if not changes:
         return {}, []
     if not check_mode:
-        client.update_build(server["id"], build_payload(server, changes))
+        client.update_build(server["id"], build_payload(server, changes, plan if plan and plan["changes"] else None))
+        if plan and plan["changes"]:
+            verify_allocations(client, server, plan)
     return changes, ["update build: %s" % ", ".join("%s=%s" % kv for kv in sorted(changes.items()))]
 
 

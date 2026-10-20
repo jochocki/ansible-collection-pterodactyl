@@ -73,6 +73,9 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             "node": spec["node"],
             "limits": want,
             "feature_limits": {"backups": want.get("backups", 2)},
+            "port": want.get("port"),
+            "additional_ports": want.get("additional_ports"),
+            "ip": want.get("ip"),
         }, sleep=sleep)
         return {"changed": True, "actions": actions, "server": created,
                 "previous_power": "stopped", "power_after": "stopped"}

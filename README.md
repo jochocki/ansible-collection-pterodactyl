@@ -85,6 +85,40 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
     memory: 4000
 ```
 
+## Ports
+
+A server's ports are allocations on its node, and they live on the Build
+Configuration tab. `pterodactyl_build` (and `minecraft_server`) take them as:
+
+- `port`: the primary, or game, port.
+- `additional_ports`: the complete set of other ports.
+- `ip`: only needed when a port exists on more than one IP of the node. It
+  applies to every port given.
+
+```yaml
+- jochocki.pterodactyl.pterodactyl_build:
+    server: Factorio
+    port: 34197
+    additional_ports: [27015]
+```
+
+- **The allocations must already exist.** The module assigns and releases them,
+  but doesn't create them on the node. A port that doesn't exist, or belongs to
+  another server, fails with a message that says so, before anything changes.
+- **Leave an option out to leave that part alone.** Without `additional_ports`,
+  the extra ports stay as they are, and a move to a new `port` keeps the old one
+  assigned as an extra. Set `additional_ports` (even to `[]`) and anything not
+  listed is released. The primary is never released without a replacement.
+- **The panel skips changes it won't make without an error**, such as an
+  allocation that is already taken. The module checks the node first and
+  confirms the result afterwards, so a change that didn't happen is an error,
+  not a silent `changed`.
+- **`allocation_limit` is a different thing.** It is how many additional
+  allocations the server is allowed to hold (an Application Feature Limit), not
+  which ones it has.
+- **When creating a server**, `port` and `additional_ports` choose its
+  allocations. Without them it takes the first free one on the node.
+
 ## Mods
 
 `mods` is optional. Leave it out and the server's `/mods` directory is not

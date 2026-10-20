@@ -12,7 +12,7 @@ description:
   - Manages a server's existence and the fields on the Details tab of the panel's server page.
   - The options for creating a server mirror the panel's create form. They are only used when
     the server does not exist yet. Change an existing server's limits with
-    M(jochocki.pterodactyl.pterodactyl_build) and its image, startup command and variables with
+    M(jochocki.pterodactyl.pterodactyl_build), which also moves its ports, and its image, startup command and variables with
     M(jochocki.pterodactyl.pterodactyl_startup).
   - Servers are found by O(external_id) when it is set, then by exact O(name).
     A server found by name gets its external ID set.
@@ -71,9 +71,23 @@ options:
   databases:
     description: Database limit, for a new server. Default 0.
     type: int
-  allocations:
-    description: Extra allocation limit, for a new server. Default 0.
+  allocation_limit:
+    description: How many additional allocations the server may hold, for a new server. Default 0.
     type: int
+  port:
+    description:
+      - The primary (game) port of a new server. It must already exist as an unassigned allocation
+        on the node. Without it the first free allocation is used.
+    type: int
+  additional_ports:
+    description: Additional ports for a new server, each an unassigned allocation on the node. Needs O(port).
+    type: list
+    elements: int
+  ip:
+    description:
+      - The allocation IP. Only needed when a port exists on more than one IP on the node.
+      - It applies to every port given, so all of them must be on this IP.
+    type: str
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
 author:
@@ -160,7 +174,10 @@ def main():
         cpu=dict(type="int"),
         backups=dict(type="int"),
         databases=dict(type="int"),
-        allocations=dict(type="int"),
+        allocation_limit=dict(type="int"),
+        port=dict(type="int"),
+        additional_ports=dict(type="list", elements="int"),
+        ip=dict(type="str"),
     )
     module = AnsibleModule(argument_spec=spec, supports_check_mode=True)
     p = module.params
@@ -198,7 +215,10 @@ def main():
             "environment": {k: str(v) for k, v in (p["environment"] or {}).items()},
             "node": p["node"],
             "limits": {k: p[k] for k in ("memory", "swap", "disk", "io", "cpu") if p[k] is not None},
-            "feature_limits": {k: p[k] for k in ("databases", "allocations", "backups") if p[k] is not None},
+            "feature_limits": {k: p[k] for k in ("databases", "backups") if p[k] is not None},
+            "port": p["port"],
+            "additional_ports": p["additional_ports"],
+            "ip": p["ip"],
         })
         module.exit_json(changed=True, actions=actions, server=summarize(created))
     except PterodactylError as exc:

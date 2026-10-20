@@ -28,6 +28,19 @@ class FakeClient(object):
         self.calls = []
         self.installing = 0
         self.fail_pull = False
+        # Allocations on the node: 9 is this server's primary, 79 belongs to another server.
+        self.node_allocs = [
+            {"id": 9, "ip": "0.0.0.0", "port": 25565, "assigned": True},
+            {"id": 77, "ip": "0.0.0.0", "port": 25566, "assigned": False},
+            {"id": 78, "ip": "0.0.0.0", "port": 25567, "assigned": False},
+            {"id": 79, "ip": "0.0.0.0", "port": 25568, "assigned": True},
+            {"id": 80, "ip": "10.0.0.1", "port": 25569, "assigned": False},
+            {"id": 81, "ip": "10.0.0.2", "port": 25569, "assigned": False},
+        ]
+        self.own = {9}
+        self.primary = 9
+        self.ignore_allocation_changes = False  # the panel skips them silently
+        self.reads = []
 
     def names(self):
         return [c[0] for c in self.calls]
@@ -55,8 +68,21 @@ class FakeClient(object):
     def update_details(self, sid, payload):
         self._log("update_details", payload)
 
+    def node_allocations(self, node_id):
+        self.reads.append("node_allocations")
+        return [dict(a) for a in self.node_allocs]
+
+    def server_allocations(self, server_id):
+        self.reads.append("server_allocations")
+        return [dict(a) for a in self.node_allocs if a["id"] in self.own]
+
     def update_build(self, sid, payload):
         self._log("update_build", payload)
+        if self.ignore_allocation_changes:
+            return
+        self.own |= set(payload.get("add_allocations", []))
+        self.own -= set(payload.get("remove_allocations", []))
+        self.primary = payload["allocation"]
 
     def update_startup(self, sid, payload):
         self._log("update_startup", payload)
