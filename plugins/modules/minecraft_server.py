@@ -16,9 +16,10 @@ description:
   - A version change stops the server, backs it up (making room by deleting the
     oldest unlocked backup) and reinstalls it. It starts again afterwards if it
     was running.
-  - The Fabric egg's installer keeps an existing C(server.jar), so a reinstall alone would leave
-    the old Minecraft version. The module removes that jar and the launcher properties first,
-    and fails if the reinstall does not bring them back.
+  - A reinstall is checked by its effect: the jar the server starts (C(SERVER_JARFILE)) must have
+    been rewritten. The panel can report success for an install that never ran, for example when
+    Wings cannot pull the egg's install image, so a jar that is missing or untouched fails the
+    run with the server left stopped and the location of Wings' install log.
   - With O(mods), the server's mods are kept in step with Modrinth too, for the
     server's own version and loader. Mods resolve before anything else, so an
     unknown project leaves the server untouched. They are installed before the
@@ -90,8 +91,8 @@ options:
     type: str
   reinstall:
     description:
-      - Run the full version-change sequence (stop, backup, remove the installer's leftovers,
-        reinstall, restart) even when the version already matches.
+      - Run the full version-change sequence (stop, backup, reinstall, restart) even when the
+        version already matches.
       - Use it to repair a server whose files do not match its version. It is not idempotent: it
         reports changed every run, so set it for one run only.
     type: bool

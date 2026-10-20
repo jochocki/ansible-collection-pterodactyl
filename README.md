@@ -38,15 +38,16 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
 - **A version change is a sequence.** The server stops, is backed up (the oldest
   unlocked backup makes room), is reinstalled, gets its mods, and then returns
   to its previous power state.
-- **A reinstall alone doesn't change a Fabric server's version.** The Fabric egg's
-  installer keeps an existing `server.jar` (the vanilla jar), so the server would
-  go on running the old Minecraft version while its variable says the new one.
-  `minecraft_server` removes that jar, the launcher properties and the installer
-  jar (and the launcher named by `SERVER_JARFILE`) after the backup and before
-  the reinstall, and fails, leaving the server stopped, if the reinstall doesn't
-  bring them back. World data, mods and configuration are not touched.
-- **`reinstall: true` repairs a server whose files don't match its version.** It
-  runs the whole sequence even when the version already matches. It always
+- **A reinstall is checked by its effect.** The panel can report success for an
+  install that never ran, for example when Wings can't pull the egg's install
+  image (a Fabric egg whose install container has been removed from Docker Hub
+  does this). So after a reinstall the jar the server starts (`SERVER_JARFILE`)
+  must have been rewritten, and if it wasn't, the run fails with the server left
+  stopped and the place Wings keeps the install output, which is
+  `/var/log/pterodactyl/install/<server uuid>.log` on the node by default. The
+  panel has no log viewer for it. Nothing in the server's files is deleted.
+- **`reinstall: true` runs the whole sequence again.** It reinstalls even when the
+  version already matches, which is how to retry after fixing a failed install. It always
   reports `changed`, so use it for one run, not in a regular playbook.
 - **Servers are keyed by `external_id`.** It defaults to the lower-cased,
   dash-separated name. A server found by exact name gets the key set on first

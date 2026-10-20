@@ -4,7 +4,8 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl i
 
 def server(**over):
     base = {
-        "id": 27, "identifier": "650fdf18", "name": "Tiny Animals", "external_id": "tiny-animals",
+        "id": 27, "identifier": "650fdf18", "uuid": "9e72677e-dba3-4ece-924c-32339960619b",
+        "name": "Tiny Animals", "external_id": "tiny-animals",
         "user": 1, "node": 1, "egg": 15, "allocation": 9, "description": "",
         "limits": {"memory": 3000, "swap": 0, "disk": 500, "io": 500, "cpu": 300, "threads": None, "oom_disabled": True},
         "feature_limits": {"databases": 0, "allocations": 0, "backups": 2},
@@ -19,7 +20,7 @@ def server(**over):
 
 
 class FakeClient(object):
-    def __init__(self, servers=None, state="running", backups=None, files=None, contents=None):
+    def __init__(self, servers=None, state="running", backups=None, files=None, contents=None, root=None):
         self._servers = servers if servers is not None else []
         self.state = state
         self._backups = backups if backups is not None else []
@@ -40,7 +41,9 @@ class FakeClient(object):
         self.own = {9}
         self.primary = 9
         self.ignore_allocation_changes = False  # the panel skips them silently
-        self.recreate = []  # files the installer writes back on a reinstall
+        self.root = root if root is not None else []  # the server's / directory
+        self.rewrites = ["fabric-server-launch.jar"]  # what a reinstall that really ran rewrites
+        self._clock = 1000
         self.install_status = None  # "install_failed" / "reinstall_failed" after a failed install
         self.reads = []
 
@@ -91,8 +94,13 @@ class FakeClient(object):
 
     def reinstall(self, sid):
         self._log("reinstall")
-        if self.recreate:
-            self.files = (self.files or []) + [{"name": n, "size": 1, "is_file": True} for n in self.recreate]
+        for name in self.rewrites:
+            self._clock += 1
+            entry = next((f for f in self.root if f["name"] == name), None)
+            if entry is None:
+                entry = {"name": name, "size": 1, "is_file": True}
+                self.root.append(entry)
+            entry["modified_at"] = "t%d" % self._clock
 
     def delete_server(self, sid):
         self._log("delete_server", sid)
@@ -126,6 +134,8 @@ class FakeClient(object):
         self._backups = [b for b in self._backups if b["uuid"] != uuid]
 
     def list_files(self, identifier, directory):
+        if directory == "/":
+            return [dict(f) for f in self.root]
         return None if self.files is None else [dict(f) for f in self.files]
 
     def create_folder(self, identifier, root, name):
@@ -134,7 +144,9 @@ class FakeClient(object):
 
     def delete_files(self, identifier, root, files):
         self._log("delete_files", tuple(files))
-        if self.files is not None:
+        if root == "/":
+            self.root = [f for f in self.root if f["name"] not in files]
+        elif self.files is not None:
             self.files = [f for f in self.files if f["name"] not in files]
 
     def pull_file(self, identifier, url, directory, filename):

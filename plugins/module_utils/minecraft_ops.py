@@ -25,6 +25,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
     new_diff,
     power_label,
     record,
+    INSTALL_LOG,
     rotate_and_backup,
     set_power,
     update_startup,
@@ -44,32 +45,33 @@ def current_version(server, loader):
     return env.get(LOADERS[loader]["version_var"])
 
 
-def stale_install_files(client, server, loader):
-    """Installer leftovers in the server's root that would survive a reinstall (see LOADERS)."""
-    row = LOADERS[loader]
-    names = list(row.get("reinstall_removes", ()))
-    launcher = ((server.get("container") or {}).get("environment") or {}).get(row.get("launcher_var", ""))
-    if launcher:
-        names.append(launcher)
-    if not names:
-        return []
-    present = {f["name"] for f in (client.list_files(server["identifier"], "/") or [])}
-    return [n for n in names if n in present]
+def jar_stamp(client, server, loader):
+    """When the jar the server starts (its SERVER_JARFILE) was last written, or None if it isn't there."""
+    name = ((server.get("container") or {}).get("environment") or {}).get(LOADERS[loader]["jar_var"])
+    if not name:
+        return None
+    for f in client.list_files(server["identifier"], "/") or []:
+        if f["name"] == name:
+            return f.get("modified_at")
+    return None
 
 
-def check_recreated(client, server, loader, removed):
-    """A reinstall that did not bring the removed installer files back has not installed anything."""
-    row = LOADERS[loader]
-    must = set(row.get("reinstall_must_recreate", ()))
-    launcher = ((server.get("container") or {}).get("environment") or {}).get(row.get("launcher_var", ""))
-    if launcher:
-        must.add(launcher)
-    present = {f["name"] for f in (client.list_files(server["identifier"], "/") or [])}
-    missing = sorted(n for n in removed if n in must and n not in present)
-    if missing:
+def check_install_ran(client, server, loader, before):
+    """The panel does not always notice an install that never ran, so look for its effect.
+
+    A failed image pull, for instance, leaves the panel reporting success. A real install
+    rewrites the jar the server starts, so a jar that is missing or untouched means it did not.
+    """
+    name = ((server.get("container") or {}).get("environment") or {}).get(LOADERS[loader]["jar_var"])
+    if not name:
+        return  # nothing to look for
+    after = jar_stamp(client, server, loader)
+    if after is None or after == before:
         raise PterodactylError(
-            "the reinstall finished but did not recreate %s. Check the server's install log in the panel; "
-            "the server is left stopped" % ", ".join(missing)
+            "the reinstall finished, but %s was not rewritten, so the install script most likely did not run "
+            "(a failed image pull does this and the panel still reports success). Wings keeps the output "
+            "on the node, by default in %s; read it and fix the cause, then run again with reinstall. "
+            "The server is left stopped." % (name, INSTALL_LOG % (server.get("uuid") or "<server uuid>"))
         )
 
 
@@ -135,7 +137,6 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     image_changed = (server.get("container") or {}).get("image") != image
     # A forced reinstall repairs a server whose files don't match its version.
     reinstall = version_changed or bool(spec.get("reinstall"))
-    stale = stale_install_files(client, server, loader) if reinstall else []
     if version_changed or image_changed:
         actions.append("set %s %s on %s" % (loader, spec["version"], image))
         if image_changed:
@@ -143,9 +144,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         if version_changed:
             record(diff, "startup", LOADERS[loader]["version_var"], current_version(server, loader), spec["version"])
     if reinstall:
-        actions.append("backup, %sreinstall%s" % (
-            "remove %s, " % ", ".join(stale) if stale else "", "" if version_changed else " (forced)"))
-        record(diff, "reinstall", "installer_files", stale, [])
+        actions.append("backup, reinstall%s" % ("" if version_changed else " (forced)"))
 
     if (reinstall or image_changed) and not check_mode:
         if reinstall:
@@ -155,8 +154,6 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             if backup:
                 actions.append("backup: %s" % rotate_and_backup(
                     client, identifier, changes.get("backups", server["feature_limits"]["backups"]), sleep=sleep))
-            if stale:
-                client.delete_files(identifier, "/", stale)
         update_startup(
             client, server,
             image=image,
@@ -164,9 +161,10 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             environment=desired_environment(loader, spec["version"]),
         )
         if reinstall:
+            stamp = jar_stamp(client, server, loader)
             client.reinstall(server["id"])
             wait_installed(client, identifier, "reinstall", sleep)
-            check_recreated(client, server, loader, stale)
+            check_install_ran(client, server, loader, stamp)
             if restore_power and previous_power == "started":
                 set_power(client, identifier, "started", sleep=sleep)
                 power_after = "started"
