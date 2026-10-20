@@ -76,10 +76,11 @@ class InstallDidNotRun(unittest.TestCase):
             self.run_it(c)
         self.assertNotIn("in the panel", str(ctx.exception))
 
-    def test_nothing_to_check_without_a_jar_variable(self):
-        s = server()
+    def test_nothing_to_check_for_an_egg_without_a_jar_variable(self):
+        c = FakeClient(servers=[server()], state="offline", root=root())
+        del c.egg_defaults["SERVER_JARFILE"]
+        s = c.servers()[0]
         del s["container"]["environment"]["SERVER_JARFILE"]
-        c = FakeClient(servers=[s], state="offline", root=root())
         self.run_it(c)  # cannot tell, so it does not guess
 
     def test_vanilla_checks_its_own_jar(self):

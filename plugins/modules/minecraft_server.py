@@ -89,6 +89,14 @@ options:
       - The allocation IP. Only needed when a port exists on more than one IP on the node.
       - It applies to every port given, so all of them must be on this IP.
     type: str
+  environment:
+    description:
+      - Egg variables to set on purpose, such as V(SERVER_JARFILE), as a dict. Values are sent as strings.
+      - Every other variable keeps the server's current value, and a new server gets the egg's own
+        defaults. The Minecraft version variable is set from O(version).
+      - Changing a variable updates the server's startup settings. It does not reinstall; add
+        O(reinstall=true) when the change needs the install script to run again.
+    type: dict
   reinstall:
     description:
       - Run the full version-change sequence (stop, backup, reinstall, restart) even when the
@@ -244,6 +252,7 @@ def main():
         port=dict(type="int"),
         additional_ports=dict(type="list", elements="int"),
         ip=dict(type="str"),
+        environment=dict(type="dict"),
         reinstall=dict(type="bool", default=False),
         backup_before_upgrade=dict(type="bool", default=True),
         mods=dict(type="list", elements="str"),
@@ -285,6 +294,7 @@ def main():
                 "node": p["node"],
                 "owner": p["owner"],
                 "reinstall": p["reinstall"],
+                "environment": p["environment"],
                 # The build tab: limits and ports.
                 "limits": {k: p[k] for k in ("memory", "cpu", "disk", "swap", "io", "backups",
                                              "port", "additional_ports", "ip")},

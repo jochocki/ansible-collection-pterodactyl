@@ -23,18 +23,15 @@ JAVA_MINIMUMS = (
 _VERSION_RE = re.compile(r"^\d+\.\d+(\.\d+)?$")
 
 # Everything a loader needs from the panel and from Modrinth. One row per
-# supported loader, so adding one is a data change.
+# supported loader, so adding one is a data change. The egg's own variables, their names
+# and their defaults come from the panel, not from here, so a new egg version needs no
+# change; only the one that holds the Minecraft version (version_var) is named.
 LOADERS = {
     "fabric": {
         "egg": "Fabric",
         "version_var": "MC_VERSION",
         "jar_var": "SERVER_JARFILE",
         "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
-        "environment": {
-            "SERVER_JARFILE": "fabric-server-launch.jar",
-            "FABRIC_VERSION": "latest",
-            "LOADER_VERSION": "latest",
-        },
         "mod_loaders": ("fabric",),
     },
     "paper": {
@@ -42,10 +39,6 @@ LOADERS = {
         "version_var": "MINECRAFT_VERSION",
         "jar_var": "SERVER_JARFILE",
         "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}}",
-        "environment": {
-            "SERVER_JARFILE": "server.jar",
-            "BUILD_NUMBER": "latest",
-        },
         "mod_loaders": ("paper", "spigot", "bukkit"),
     },
     "vanilla": {
@@ -53,7 +46,6 @@ LOADERS = {
         "version_var": "VANILLA_VERSION",
         "jar_var": "SERVER_JARFILE",
         "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}}",
-        "environment": {"SERVER_JARFILE": "server.jar"},
         "mod_loaders": (),
     },
 }

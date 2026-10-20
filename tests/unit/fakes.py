@@ -6,7 +6,7 @@ def server(**over):
     base = {
         "id": 27, "identifier": "650fdf18", "uuid": "9e72677e-dba3-4ece-924c-32339960619b",
         "name": "Tiny Animals", "external_id": "tiny-animals",
-        "user": 1, "node": 1, "egg": 15, "allocation": 9, "description": "",
+        "user": 1, "node": 1, "nest": 1, "egg": 15, "allocation": 9, "description": "",
         "limits": {"memory": 3000, "swap": 0, "disk": 500, "io": 500, "cpu": 300, "threads": None, "oom_disabled": True},
         "feature_limits": {"databases": 0, "allocations": 0, "backups": 2},
         "container": {
@@ -46,6 +46,10 @@ class FakeClient(object):
         self._clock = 1000
         self.install_status = None  # "install_failed" / "reinstall_failed" after a failed install
         self.reads = []
+        # The egg's variables and their defaults. This is the 2024 Fabric egg; tests for the
+        # maintained egg set SERVER_JARFILE to "server.jar".
+        self.egg_defaults = {"SERVER_JARFILE": "fabric-server-launch.jar", "MC_VERSION": "latest",
+                             "FABRIC_VERSION": "latest", "LOADER_VERSION": "latest"}
 
     def names(self):
         return [c[0] for c in self.calls]
@@ -61,7 +65,12 @@ class FakeClient(object):
         return [{"id": 3, "name": "wings01"}]
 
     def eggs(self):
-        return [{"id": 15, "name": "Fabric"}, {"id": 5, "name": "Vanilla Minecraft"}, {"id": 3, "name": "Paper"}]
+        return [{"id": 15, "nest": 1, "name": "Fabric"}, {"id": 5, "nest": 1, "name": "Vanilla Minecraft"},
+                {"id": 3, "nest": 1, "name": "Paper"}]
+
+    def egg_variables(self, nest_id, egg_id):
+        self.reads.append("egg_variables")
+        return [{"env_variable": k, "default_value": v} for k, v in self.egg_defaults.items()]
 
     def free_allocation(self, node_id):
         return 77

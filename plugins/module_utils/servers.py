@@ -124,6 +124,10 @@ def _only(items, name, what):
 INSTALL_LOG = "/var/log/pterodactyl/install/%s.log"
 
 
+def find_egg(client, name):
+    return _only(client.eggs(), name, "egg")
+
+
 def wait_installed(client, identifier, what="install", sleep=time.sleep):
     """Wait for an install to finish, and fail if it finished by failing.
 

@@ -21,6 +21,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
     create_server,
     ensure_build,
     ensure_details,
+    find_egg,
     find_server,
     new_diff,
     power_label,
@@ -33,11 +34,24 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
 )
 
 
-def desired_environment(loader, version):
-    row = LOADERS[loader]
-    env = dict(row["environment"])
-    env[row["version_var"]] = version
+def egg_environment(client, nest_id, egg_id, loader, version, current=None, extra=None):
+    """Every variable of the egg, ready to send.
+
+    Each keeps the server's current value, or the egg's own default for a new server or a variable
+    the egg gained. Only the Minecraft version, and whatever the play sets explicitly, is changed.
+    Taking names and defaults from the egg means a newer egg (a different SERVER_JARFILE, say)
+    never gets old values pushed back onto it.
+    """
+    current = current or {}
+    env = {v["env_variable"]: current.get(v["env_variable"], v["default_value"])
+           for v in client.egg_variables(nest_id, egg_id)}
+    env[LOADERS[loader]["version_var"]] = version
+    env.update(extra or {})
     return env
+
+
+def _extra_environment(spec):
+    return {k: str(v) for k, v in (spec.get("environment") or {}).items()}
 
 
 def current_version(server, loader):
@@ -45,9 +59,8 @@ def current_version(server, loader):
     return env.get(LOADERS[loader]["version_var"])
 
 
-def jar_stamp(client, server, loader):
+def jar_stamp(client, server, name):
     """When the jar the server starts (its SERVER_JARFILE) was last written, or None if it isn't there."""
-    name = ((server.get("container") or {}).get("environment") or {}).get(LOADERS[loader]["jar_var"])
     if not name:
         return None
     for f in client.list_files(server["identifier"], "/") or []:
@@ -56,16 +69,15 @@ def jar_stamp(client, server, loader):
     return None
 
 
-def check_install_ran(client, server, loader, before):
+def check_install_ran(client, server, name, before):
     """The panel does not always notice an install that never ran, so look for its effect.
 
     A failed image pull, for instance, leaves the panel reporting success. A real install
     rewrites the jar the server starts, so a jar that is missing or untouched means it did not.
     """
-    name = ((server.get("container") or {}).get("environment") or {}).get(LOADERS[loader]["jar_var"])
     if not name:
         return  # nothing to look for
-    after = jar_stamp(client, server, loader)
+    after = jar_stamp(client, server, name)
     if after is None or after == before:
         raise PterodactylError(
             "the reinstall finished, but %s was not rewritten, so the install script most likely did not run "
@@ -100,14 +112,16 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         if check_mode:
             return {"changed": True, "actions": actions, "server": None, "previous_power": "stopped",
                     "power_after": "stopped", "diff": diff}
+        egg = find_egg(client, row["egg"])
         created = create_server(client, {
             "name": spec["name"],
             "external_id": spec.get("external_id"),
             "owner": spec["owner"],
             "egg": row["egg"],
             "image": image,
-            "startup": row["startup"],
-            "environment": desired_environment(loader, spec["version"]),
+            "startup": egg.get("startup") or row["startup"],
+            "environment": egg_environment(client, egg["nest"], egg["id"], loader, spec["version"],
+                                           extra=_extra_environment(spec)),
             "node": spec["node"],
             "limits": want,
             "feature_limits": {"backups": want.get("backups", 2)},
@@ -133,20 +147,26 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     changes, build_actions = ensure_build(client, server, want, check_mode, diff)
     actions += build_actions
 
+    current_env = (server.get("container") or {}).get("environment") or {}
+    extra = _extra_environment(spec)
+    env_changed = {k: v for k, v in extra.items() if current_env.get(k) != v}
     version_changed = current_version(server, loader) != spec["version"]
     image_changed = (server.get("container") or {}).get("image") != image
-    # A forced reinstall repairs a server whose files don't match its version.
+    # A forced reinstall retries an install that did not take.
     reinstall = version_changed or bool(spec.get("reinstall"))
-    if version_changed or image_changed:
+    startup_changed = version_changed or image_changed or bool(env_changed)
+    if startup_changed:
         actions.append("set %s %s on %s" % (loader, spec["version"], image))
         if image_changed:
             record(diff, "startup", "docker_image", (server.get("container") or {}).get("image"), image)
         if version_changed:
             record(diff, "startup", LOADERS[loader]["version_var"], current_version(server, loader), spec["version"])
+        for key, new in env_changed.items():
+            record(diff, "startup", "environment.%s" % key, current_env.get(key), new)
     if reinstall:
         actions.append("backup, reinstall%s" % ("" if version_changed else " (forced)"))
 
-    if (reinstall or image_changed) and not check_mode:
+    if (reinstall or startup_changed) and not check_mode:
         if reinstall:
             if previous_power == "started":
                 set_power(client, identifier, "stopped", sleep=sleep)
@@ -154,17 +174,19 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             if backup:
                 actions.append("backup: %s" % rotate_and_backup(
                     client, identifier, changes.get("backups", server["feature_limits"]["backups"]), sleep=sleep))
+        environment = egg_environment(client, server["nest"], server["egg"], loader, spec["version"], current_env, extra)
         update_startup(
             client, server,
             image=image,
             startup=(server.get("container") or {}).get("startup_command") or row["startup"],
-            environment=desired_environment(loader, spec["version"]),
+            environment=environment,
         )
         if reinstall:
-            stamp = jar_stamp(client, server, loader)
+            jar = environment.get(row["jar_var"])  # the new value: a play may have just changed it
+            stamp = jar_stamp(client, server, jar)
             client.reinstall(server["id"])
             wait_installed(client, identifier, "reinstall", sleep)
-            check_install_ran(client, server, loader, stamp)
+            check_install_ran(client, server, jar, stamp)
             if restore_power and previous_power == "started":
                 set_power(client, identifier, "started", sleep=sleep)
                 power_after = "started"

@@ -38,6 +38,14 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
 - **A version change is a sequence.** The server stops, is backed up (the oldest
   unlocked backup makes room), is reinstalled, gets its mods, and then returns
   to its previous power state.
+- **The egg owns its variables.** On an update only the Minecraft version is
+  changed: every other egg variable keeps the server's value, so a server's
+  `SERVER_JARFILE` is never overwritten. A new server gets the egg's own defaults
+  and startup command. Names and defaults come from the panel, so a newer egg
+  version needs no change here. To set a variable on purpose, use `environment`
+  (for example `SERVER_JARFILE: server.jar` when moving a server to an egg that
+  names its jar differently). That updates the startup settings only; add
+  `reinstall: true` when the install script has to run again.
 - **A reinstall is checked by its effect.** The panel can report success for an
   install that never ran, for example when Wings can't pull the egg's install
   image (a Fabric egg whose install container has been removed from Docker Hub

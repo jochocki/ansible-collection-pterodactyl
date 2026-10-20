@@ -88,7 +88,7 @@ class PterodactylClient(object):
         for nest in self.paginate("/api/application/nests"):
             doc = self.call("GET", "/api/application/nests/%s" % nest["id"], params={"include": "eggs"})
             for egg in doc["attributes"]["relationships"]["eggs"]["data"]:
-                eggs.append(egg["attributes"])
+                eggs.append(dict(egg["attributes"], nest=nest["id"]))  # so callers know where it lives
         return eggs
 
     def node_allocations(self, node_id):
@@ -99,6 +99,11 @@ class PterodactylClient(object):
         """The allocations assigned to one server (its primary among them)."""
         doc = self.call("GET", "/api/application/servers/%s" % server_id, params={"include": "allocations"})
         return [a["attributes"] for a in doc["attributes"]["relationships"]["allocations"]["data"]]
+
+    def egg_variables(self, nest_id, egg_id):
+        """An egg's variables: env_variable, default_value, rules."""
+        doc = self.call("GET", "/api/application/nests/%s/eggs/%s" % (nest_id, egg_id), params={"include": "variables"})
+        return [v["attributes"] for v in doc["attributes"]["relationships"]["variables"]["data"]]
 
     def free_allocation(self, node_id):
         for alloc in self.paginate("/api/application/nodes/%s/allocations" % node_id):

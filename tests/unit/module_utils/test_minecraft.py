@@ -47,7 +47,7 @@ class VersionCheck(unittest.TestCase):
 class LoaderTable(unittest.TestCase):
     def test_every_loader_has_what_the_modules_need(self):
         for name, row in mc.LOADERS.items():
-            for key in ("egg", "version_var", "startup", "environment", "mod_loaders"):
+            for key in ("egg", "version_var", "jar_var", "startup", "mod_loaders"):
                 self.assertIn(key, row, name)
 
     def test_paper_accepts_plugin_loaders(self):
