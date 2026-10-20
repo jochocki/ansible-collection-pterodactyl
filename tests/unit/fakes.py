@@ -41,6 +41,7 @@ class FakeClient(object):
         self.primary = 9
         self.ignore_allocation_changes = False  # the panel skips them silently
         self.recreate = []  # files the installer writes back on a reinstall
+        self.install_status = None  # "install_failed" / "reinstall_failed" after a failed install
         self.reads = []
 
     def names(self):
@@ -103,6 +104,9 @@ class FakeClient(object):
     def send_power(self, identifier, signal):
         self._log("power", signal)
         self.state = {"start": "running", "stop": "offline", "restart": "running", "kill": "offline"}[signal]
+
+    def server_info(self, identifier):
+        return {"uuid": "9e72677e-dba3-4ece-924c-32339960619b", "status": self.install_status}
 
     def is_installing(self, identifier):
         self.installing += 1

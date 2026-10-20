@@ -115,3 +115,26 @@ class OtherLoaders(unittest.TestCase):
             ops.ensure_minecraft_server(c, spec(loader=loader, version="1.21.4"), sleep=no_sleep)
             self.assertNotIn("delete_files", c.names(), loader)
             self.assertIn("reinstall", c.names(), loader)
+
+
+class FailedInstall(unittest.TestCase):
+    def test_a_failed_reinstall_names_the_log_and_leaves_the_server_stopped(self):
+        c = FakeClient(servers=[server()], state="running", files=root())
+        c.install_status = "reinstall_failed"
+        with self.assertRaisesRegex(PterodactylError,
+                                    "reinstall failed.*reinstall_failed.*/var/log/pterodactyl/install/9e72677e-dba3-4ece-924c-32339960619b.log"):
+            ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        self.assertNotIn(("power", "start"), c.calls)
+
+    def test_it_is_caught_even_for_loaders_with_nothing_to_recreate(self):
+        s = server(egg=5, container={"image": "ghcr.io/pterodactyl/yolks:java_21", "startup_command": "x",
+                                     "environment": {"VANILLA_VERSION": "1.21"}})
+        c = FakeClient(servers=[s], state="offline")
+        c.eggs = lambda: [{"id": 5, "name": "Vanilla Minecraft"}]
+        c.install_status = "reinstall_failed"
+        with self.assertRaisesRegex(PterodactylError, "reinstall failed"):
+            ops.ensure_minecraft_server(c, spec(loader="vanilla", version="1.21.4"), sleep=no_sleep)
+
+    def test_a_server_that_finished_installing_is_fine(self):
+        c = FakeClient(servers=[server()], state="offline")
+        ops.ensure_minecraft_server(c, spec(), sleep=no_sleep)

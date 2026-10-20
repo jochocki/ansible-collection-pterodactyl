@@ -121,8 +121,23 @@ def _only(items, name, what):
     return hits[0]
 
 
+INSTALL_LOG = "/var/log/pterodactyl/install/%s.log"
+
+
 def wait_installed(client, identifier, what="install", sleep=time.sleep):
+    """Wait for an install to finish, and fail if it finished by failing.
+
+    The panel reports a failed install as a status, not an error, and shows no
+    output for it. Wings keeps the output on the node, so say where.
+    """
     wait_until(lambda: not client.is_installing(identifier), 600, 10, "%s to finish" % what, sleep)
+    info = client.server_info(identifier)
+    status = info.get("status") or ""
+    if status.endswith("_failed"):
+        raise PterodactylError(
+            "the %s failed (panel status %s). Wings keeps the output on the node, by default in %s, and a "
+            "new install overwrites it, so read it before retrying" % (what, status, INSTALL_LOG % info.get("uuid", "<server uuid>"))
+        )
 
 
 # -- allocations (ports) ----------------------------------------------------

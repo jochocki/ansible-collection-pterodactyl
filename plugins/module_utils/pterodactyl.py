@@ -134,8 +134,12 @@ class PterodactylClient(object):
     def send_power(self, identifier, signal):
         self.call("POST", self._c(identifier, "/power"), body={"signal": signal})
 
+    def server_info(self, identifier):
+        """The client API's view of a server: uuid, status, is_installing and more."""
+        return self.call("GET", self._c(identifier))["attributes"]
+
     def is_installing(self, identifier):
-        return bool(self.call("GET", self._c(identifier))["attributes"].get("is_installing"))
+        return bool(self.server_info(identifier).get("is_installing"))
 
     def backups(self, identifier):
         doc = self.call("GET", self._c(identifier, "/backups"))
