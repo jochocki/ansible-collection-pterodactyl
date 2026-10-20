@@ -33,6 +33,7 @@ LOADERS = {
         "jar_var": "SERVER_JARFILE",
         "startup": "java -Xms128M -Xmx{{SERVER_MEMORY}}M -jar {{SERVER_JARFILE}}",
         "mod_loaders": ("fabric",),
+        "mods_dir": "/mods",
     },
     "paper": {
         "egg": "Paper",
@@ -40,6 +41,7 @@ LOADERS = {
         "jar_var": "SERVER_JARFILE",
         "startup": "java -Xms128M -XX:MaxRAMPercentage=95.0 -jar {{SERVER_JARFILE}}",
         "mod_loaders": ("paper", "spigot", "bukkit"),
+        "mods_dir": "/plugins",
     },
     "vanilla": {
         "egg": "Vanilla Minecraft",

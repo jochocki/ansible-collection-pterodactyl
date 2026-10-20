@@ -150,21 +150,24 @@ empty list.** In YAML a bare `mods:` with nothing after it is `null`, which the
 module treats as not set, so nothing is touched. Only `mods: []` is an empty
 list, and that deletes every `.jar` in `/mods` (other files stay).
 
-**A version change on a server whose mods you don't manage is checked.** The old
-jars stay where they are, and Fabric refuses to start if one doesn't support the
-new version. So before anything starts, the module looks each jar up on Modrinth
-by its hash and reports `compatible`, `incompatible` (with the versions it was
-built for) or `unknown` (not on Modrinth) as `unmanaged_mods`, with a warning for
-each one that won't load. It also does this under `--check`, so you see it before
-the run. It never changes those jars, and it skips the check for more than 40 jars
-or a loader without mod support. List `mods` to have them matched to the new
-version instead.
+**A server that has mods but no `mods` list fails, by default.** With nothing saying
+what the mods should be, a version change leaves jars built for the old version,
+and Fabric refuses to start with one. So when `mods` isn't set and the server's
+mods directory (`/mods`, or `/plugins` for Paper) holds jars, the run stops before
+changing anything, under `--check` too. The message names the jars and, if the
+version is changing, asks Modrinth about each one by its hash and says which won't
+load. Either list `mods`, and the right versions are installed and the rest
+removed, or choose what to do with `unlisted_mods`:
 
-Entries are Modrinth project **slugs**, the last part of a project's URL
-(`modrinth.com/mod/fabric-api` is `fabric-api`). A project ID works too, and is
-the safer pin, because an author can rename a slug. A slug is not always the
-project's name: FabricExporter is `fabricexporter`. The module fails on an
-unknown one, naming it, before it changes anything.
+| `unlisted_mods` | When `mods` is not set and there are jars |
+| --- | --- |
+| `fail` (default) | Stop before changing anything. |
+| `warn` | Go ahead. On a version change, check each jar against Modrinth and warn about the ones that won't load (`unmanaged_mods` in the result). |
+| `ignore` | Go ahead and say nothing, for mods you manage by hand. |
+
+It never changes those jars, and it only looks at a directory that exists and
+only audits up to 40 jars. A vanilla server has no mods to find. Setting `mods`
+(even to `[]`) means the list is the answer, so none of this applies.
 
 - **List dependencies yourself.** The module doesn't read a mod's required
   dependencies, so a mod that needs Fabric API only works if `fabric-api` is in

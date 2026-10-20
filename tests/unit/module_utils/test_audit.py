@@ -86,7 +86,7 @@ class Flow(unittest.TestCase):
     def bump(self, **kw):
         c = client(**{"fabric-api.jar": OLD})
         c.state = "offline"
-        return c, ops.converge_minecraft(c, spec(), post=self.post(), sleep=no_sleep, **kw)
+        return c, ops.converge_minecraft(c, spec(), post=self.post(), sleep=no_sleep, unlisted="warn", **kw)
 
     def test_a_version_bump_with_unmanaged_mods_reports_what_will_not_load(self):
         c, out = self.bump()
@@ -103,7 +103,7 @@ class Flow(unittest.TestCase):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_21", "startup_command": "x",
                               "environment": {"MC_VERSION": "1.21.10", "SERVER_JARFILE": "fabric-server-launch.jar"}})
         c._servers = [s]
-        out = ops.converge_minecraft(c, spec(), post=self.post(), sleep=no_sleep)
+        out = ops.converge_minecraft(c, spec(), post=self.post(), sleep=no_sleep, unlisted="warn")
         self.assertNotIn("unmanaged_mods", out)
 
     def test_no_audit_when_mods_are_managed(self):
@@ -116,7 +116,7 @@ class Flow(unittest.TestCase):
 
     def test_no_audit_without_a_post_function(self):
         c = client(**{"fabric-api.jar": OLD})
-        self.assertNotIn("unmanaged_mods", ops.converge_minecraft(c, spec(), sleep=no_sleep))
+        self.assertNotIn("unmanaged_mods", ops.converge_minecraft(c, spec(), sleep=no_sleep, unlisted="warn"))
 
     def test_a_new_server_has_nothing_to_audit(self):
         out = ops.converge_minecraft(FakeClient(servers=[]), spec(), post=self.post(), sleep=no_sleep)

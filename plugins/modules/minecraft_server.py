@@ -112,12 +112,26 @@ options:
   mods:
     description:
       - Modrinth project slugs or IDs, the complete set of mods for the server.
-      - Leave it out to leave C(/mods) alone. Then a version change checks the jars already there
-        against Modrinth and warns about any that will not load (see RV(unmanaged_mods)).
+      - Leave it out to leave the mods directory alone. If the server already has mods, the run
+        fails before changing anything unless O(unlisted_mods) says otherwise.
       - An empty list removes every mod (with O(purge=true)). Not valid for the V(vanilla) loader.
       - Required dependencies, such as V(fabric-api), are not added for you. List them.
     type: list
     elements: str
+  unlisted_mods:
+    description:
+      - What to do when O(mods) is not set and the server already has mods in its mods directory
+        (C(/mods), or C(/plugins) for Paper).
+      - V(fail) stops before anything is changed. Nothing says what those mods should be, and a
+        version change would leave jars built for the old version that Fabric refuses to load. This is
+        the default, and the message names the jars and, on a version change, which ones won't load.
+      - V(warn) lets the run go on, checks the jars on a version change and warns about the ones that
+        won't load (see RV(unmanaged_mods)).
+      - V(ignore) leaves them alone without a word, for mods you really do manage by hand.
+      - Does not apply when O(mods) is set, including an empty list.
+    type: str
+    choices: [fail, warn, ignore]
+    default: fail
   purge:
     description:
       - Delete C(.jar) files in C(/mods) that are not in O(mods), after the listed ones are
@@ -277,6 +291,7 @@ def main():
         reinstall=dict(type="bool", default=False),
         backup_before_upgrade=dict(type="bool", default=True),
         mods=dict(type="list", elements="str"),
+        unlisted_mods=dict(type="str", default="fail", choices=["fail", "warn", "ignore"]),
         purge=dict(type="bool", default=True),
         user_agent=dict(type="str", default="ansible-collection-jochocki.pterodactyl"),
         validate_version=dict(type="bool", default=True),
@@ -326,6 +341,7 @@ def main():
             mods=p["mods"],
             fetch=fetch,
             post=post,
+            unlisted=p["unlisted_mods"],
             purge=p["purge"],
             check_mode=module.check_mode,
             backup=p["backup_before_upgrade"],

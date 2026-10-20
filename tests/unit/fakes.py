@@ -42,6 +42,7 @@ class FakeClient(object):
         self.primary = 9
         self.ignore_allocation_changes = False  # the panel skips them silently
         self.root = root if root is not None else []  # the server's / directory
+        self.listed, self.pulled_to = [], []
         self.rewrites = ["fabric-server-launch.jar"]  # what a reinstall that really ran rewrites
         self._clock = 1000
         self.install_status = None  # "install_failed" / "reinstall_failed" after a failed install
@@ -143,6 +144,7 @@ class FakeClient(object):
         self._backups = [b for b in self._backups if b["uuid"] != uuid]
 
     def list_files(self, identifier, directory):
+        self.listed.append(directory)
         if directory == "/":
             return [dict(f) for f in self.root]
         return None if self.files is None else [dict(f) for f in self.files]
@@ -160,6 +162,7 @@ class FakeClient(object):
 
     def pull_file(self, identifier, url, directory, filename):
         self._log("pull_file", filename)
+        self.pulled_to.append(directory)
         if self.fail_pull:
             raise PterodactylError("pull failed")
 

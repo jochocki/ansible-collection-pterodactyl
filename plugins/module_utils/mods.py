@@ -56,15 +56,15 @@ def resolve_mods(version, loader, projects, fetch):
     return wanted
 
 
-def apply_mods(client, identifier, wanted, purge=True, check_mode=False, diff=None):
-    """Install, verify and (optionally) prune. Returns a result dict."""
-    present = client.list_files(identifier, MODS_DIR)
+def apply_mods(client, identifier, wanted, purge=True, check_mode=False, diff=None, directory=MODS_DIR):
+    """Install, verify and (optionally) prune `directory`. Returns a result dict."""
+    present = client.list_files(identifier, directory)
     created_dir = False
     if present is None:
         present = []
         created_dir = bool(wanted)
         if created_dir and not check_mode:
-            client.create_folder(identifier, "/", "mods")
+            client.create_folder(identifier, "/", directory.strip("/"))
 
     pull, keep, stale = plan(wanted, present)
     # A same-named jar with the wrong size is re-pulled: remove it first.
@@ -89,17 +89,22 @@ def apply_mods(client, identifier, wanted, purge=True, check_mode=False, diff=No
         return result
 
     if replace:
-        client.delete_files(identifier, MODS_DIR, replace)
+        client.delete_files(identifier, directory, replace)
     for item in pull:
-        client.pull_file(identifier, item["url"], MODS_DIR, item["filename"])
-        data = client.read_file(identifier, "%s/%s" % (MODS_DIR, item["filename"]))
+        client.pull_file(identifier, item["url"], directory, item["filename"])
+        data = client.read_file(identifier, "%s/%s" % (directory, item["filename"]))
         if modrinth.sha512_hex(data) != item["sha512"]:
-            client.delete_files(identifier, MODS_DIR, [item["filename"]])
+            client.delete_files(identifier, directory, [item["filename"]])
             raise PterodactylError("sha512 mismatch for %s; file removed" % item["filename"])
     # Stale jars go last: if a pull above fails, the old mods are still there.
     if purge and stale:
-        client.delete_files(identifier, MODS_DIR, stale)
+        client.delete_files(identifier, directory, stale)
     return result
+
+
+def list_jars(client, identifier, directory=MODS_DIR):
+    """The .jar files in a server's mods directory, sorted. Empty if the directory does not exist."""
+    return sorted(f["name"] for f in (client.list_files(identifier, directory) or []) if f["name"].endswith(".jar"))
 
 
 def audit_unmanaged(client, identifier, game_version, loader, post, limit=40):
@@ -112,12 +117,13 @@ def audit_unmanaged(client, identifier, game_version, loader, post, limit=40):
     row = LOADERS[loader]
     if not row["mod_loaders"]:
         return None
-    jars = sorted(f["name"] for f in (client.list_files(identifier, MODS_DIR) or []) if f["name"].endswith(".jar"))
+    directory = row["mods_dir"]
+    jars = list_jars(client, identifier, directory)
     if not jars or len(jars) > limit:
         return None
     hashes = {}
     for name in jars:
-        hashes[name] = modrinth.sha512_hex(client.read_file(identifier, "%s/%s" % (MODS_DIR, name)))
+        hashes[name] = modrinth.sha512_hex(client.read_file(identifier, "%s/%s" % (directory, name)))
     try:
         known = modrinth.identify(set(hashes.values()), post)
     except (HttpError, ValueError):
@@ -140,4 +146,5 @@ def audit_unmanaged(client, identifier, game_version, loader, post, limit=40):
 
 def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False, diff=None):
     """Resolve, then apply."""
-    return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode, diff)
+    return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode, diff,
+                      LOADERS[loader]["mods_dir"])

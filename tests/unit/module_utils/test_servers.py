@@ -230,7 +230,7 @@ def converge(client, mods=("fabric-api",), fetch=CATALOG, **kw):
 class ConvergeWithMods(unittest.TestCase):
     def test_mods_none_leaves_files_alone_and_restores_power_itself(self):
         c = FakeClient(servers=[server()], state="running", files=[f("hand-installed.jar")])
-        converge(c, mods=None)
+        converge(c, mods=None, unlisted="ignore")
         self.assertNotIn("pull_file", c.names())
         self.assertNotIn("delete_files", c.names())
         self.assertEqual(c.calls[-1], ("power", "start"))

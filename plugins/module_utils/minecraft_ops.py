@@ -15,6 +15,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft imp
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.mods import (
     apply_mods,
     audit_unmanaged,
+    list_jars,
     resolve_mods,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
@@ -224,13 +225,52 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     }
 
 
+def _names(names, shown=6):
+    return ", ".join(names[:shown]) + (" and %d more" % (len(names) - shown) if len(names) > shown else "")
+
+
+def check_unlisted(client, spec, post, policy):
+    """Stop before changing anything when a server has mods but no list says what they should be.
+
+    With no mods list the module leaves the mods directory alone, and that is easy to fall into
+    by accident: a version change then leaves jars built for the old version, and Fabric will not
+    start. policy is fail (refuse), warn (let it through and warn later) or ignore.
+    """
+    row = LOADERS[spec["loader"]]
+    if policy != "fail" or not row["mod_loaders"]:
+        return
+    server = find_server(client.servers(), spec.get("external_id"), None, spec["name"])
+    if server is None:
+        return
+    jars = list_jars(client, server["identifier"], row["mods_dir"])
+    if not jars:
+        return
+    detail = ""
+    if current_version(server, spec["loader"]) != spec["version"] and post is not None:
+        report = audit_unmanaged(client, server["identifier"], spec["version"], spec["loader"], post) or []
+        bad = ["%s (%s)" % (r["file"], r["detail"] if r["status"] == "incompatible" else "not found on Modrinth")
+               for r in report if r["status"] != "compatible"]
+        if bad:
+            detail = " The version is changing to %s and these would stay as they are: %s." % (spec["version"], _names(bad))
+    raise PterodactylError(
+        "%s: %s holds %d jar(s) (%s) but no mods list is set, so nothing says what they should be.%s "
+        "Set mods to the list this server should have and the matching versions are installed and the "
+        "rest removed, or set unlisted_mods to warn or ignore to leave them alone on purpose."
+        % (spec["name"], row["mods_dir"], len(jars), _names(jars), detail)
+    )
+
+
 def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mode=False, backup=True,
-                       sleep=time.sleep, post=None):
+                       sleep=time.sleep, post=None, unlisted="fail"):
     """Converge a server and, when `mods` is given, its mods, then its power.
 
     post (a callable taking url and body and returning parsed JSON) lets a version change on a
     server whose mods are not managed check each existing jar against Modrinth; the answer is
     returned as unmanaged_mods and the jars are not touched.
+
+    unlisted says what to do when mods is None and the server already has mods: "fail" before
+    changing anything (the default), "warn" (check them on a version change and warn), or
+    "ignore".
 
     mods=None leaves /mods alone. A list (even an empty one) makes it the
     complete set of mods. Mods resolve before anything else, so an unknown
@@ -241,11 +281,13 @@ def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mo
     wanted = None
     if mods is not None:
         wanted = resolve_mods(spec["version"], spec["loader"], mods, fetch)
+    else:
+        check_unlisted(client, spec, post, unlisted)
 
     result = ensure_minecraft_server(
         client, spec, check_mode=check_mode, restore_power=mods is None, backup=backup, sleep=sleep)
     if wanted is None:
-        if post is not None and result.get("version_changed") and result["server"] is not None:
+        if unlisted == "warn" and post is not None and result.get("version_changed") and result["server"] is not None:
             result["unmanaged_mods"] = audit_unmanaged(
                 client, result["server"]["identifier"], spec["version"], spec["loader"], post)
         return result
@@ -258,7 +300,7 @@ def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mo
         return result
 
     outcome = apply_mods(client, server["identifier"], wanted, purge=purge, check_mode=check_mode,
-                         diff=result["diff"])
+                         diff=result["diff"], directory=LOADERS[spec["loader"]]["mods_dir"])
     result["mods"] = outcome
     if outcome["changed"]:
         result["changed"] = True
