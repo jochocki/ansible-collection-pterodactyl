@@ -63,6 +63,39 @@ eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
     state: "{{ tiny.previous_power }}"
 ```
 
+## Mods
+
+`minecraft_mods` takes Modrinth project **slugs**, the last part of a project's
+URL (`modrinth.com/mod/fabric-api` is `fabric-api`). A project ID works too, and
+is the safer pin, because an author can rename a slug. A slug is not always the
+project's name: FabricExporter is `fabricexporter`, and the module fails on an
+unknown one before it changes anything.
+
+```yaml
+- jochocki.pterodactyl.minecraft_mods:
+    server: Tiny Animals
+    version: "26.3"
+    loader: fabric
+    mods:
+      - fabric-api
+      - xaeros-minimap
+```
+
+- **List dependencies yourself.** The module doesn't read a mod's required
+  dependencies, so a mod that needs Fabric API only works if `fabric-api` is in
+  the list too.
+- **Each mod gets the newest release for the server's version and loader.** A
+  project with no release for that Minecraft version fails the whole run, so a
+  version bump can't leave `/mods` half updated. The `paper` loader accepts
+  `paper`, `spigot` and `bukkit` plugins. `vanilla` has no mod support.
+- **`purge` is on by default.** Any `.jar` in `/mods` that isn't in `mods` is
+  deleted, hand-installed ones included, but only after the listed files are
+  downloaded and their sha512 checked. Set `purge: false` to keep them. Then an
+  upgraded mod leaves its old jar behind, and Fabric refuses to start with two
+  jars of the same mod. Files that aren't `.jar` are never touched.
+- **The module doesn't restart the server.** Follow it with
+  `pterodactyl_power` (`state: restarted`) to load the new mods.
+
 ## Connection
 
 Every module takes `panel_url`, `api_key` and `validate_certs`. `panel_url` and
