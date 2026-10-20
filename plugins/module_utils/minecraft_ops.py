@@ -14,6 +14,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft imp
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.mods import (
     apply_mods,
+    audit_unmanaged,
     resolve_mods,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
@@ -130,7 +131,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
                                    "limits": {k: v for k, v in want.items() if v is not None}}
         if check_mode:
             return {"changed": True, "actions": actions, "server": None, "previous_power": "stopped",
-                    "power_after": "stopped", "diff": diff}
+                    "power_after": "stopped", "diff": diff, "version_changed": False}
         egg = find_egg(client, row["egg"])
         created = create_server(client, {
             "name": spec["name"],
@@ -149,7 +150,7 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             "ip": want.get("ip"),
         }, sleep=sleep)
         return {"changed": True, "actions": actions, "server": created,
-                "previous_power": "stopped", "power_after": "stopped", "diff": diff}
+                "previous_power": "stopped", "power_after": "stopped", "diff": diff, "version_changed": False}
 
     if server.get("egg") is not None:
         egg_ids = [e["id"] for e in client.eggs() if e["name"] == row["egg"]]
@@ -219,12 +220,17 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         "previous_power": previous_power,
         "power_after": power_after,
         "diff": diff,
+        "version_changed": version_changed,
     }
 
 
 def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mode=False, backup=True,
-                       sleep=time.sleep):
+                       sleep=time.sleep, post=None):
     """Converge a server and, when `mods` is given, its mods, then its power.
+
+    post (a callable taking url and body and returning parsed JSON) lets a version change on a
+    server whose mods are not managed check each existing jar against Modrinth; the answer is
+    returned as unmanaged_mods and the jars are not touched.
 
     mods=None leaves /mods alone. A list (even an empty one) makes it the
     complete set of mods. Mods resolve before anything else, so an unknown
@@ -239,6 +245,9 @@ def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mo
     result = ensure_minecraft_server(
         client, spec, check_mode=check_mode, restore_power=mods is None, backup=backup, sleep=sleep)
     if wanted is None:
+        if post is not None and result.get("version_changed") and result["server"] is not None:
+            result["unmanaged_mods"] = audit_unmanaged(
+                client, result["server"]["identifier"], spec["version"], spec["loader"], post)
         return result
 
     server = result["server"]

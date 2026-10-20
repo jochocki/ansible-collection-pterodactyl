@@ -102,6 +102,42 @@ def apply_mods(client, identifier, wanted, purge=True, check_mode=False, diff=No
     return result
 
 
+def audit_unmanaged(client, identifier, game_version, loader, post, limit=40):
+    """Say which of a server's existing mods work with `game_version`, by asking Modrinth about each jar.
+
+    Used when the version changes on a server whose mods are not managed. Returns a list of
+    {file, status, detail} with status compatible, incompatible or unknown (not on Modrinth, or
+    the lookup failed), and None when there is nothing to check or too much to download.
+    """
+    row = LOADERS[loader]
+    if not row["mod_loaders"]:
+        return None
+    jars = sorted(f["name"] for f in (client.list_files(identifier, MODS_DIR) or []) if f["name"].endswith(".jar"))
+    if not jars or len(jars) > limit:
+        return None
+    hashes = {}
+    for name in jars:
+        hashes[name] = modrinth.sha512_hex(client.read_file(identifier, "%s/%s" % (MODS_DIR, name)))
+    try:
+        known = modrinth.identify(set(hashes.values()), post)
+    except (HttpError, ValueError):
+        known = {}
+    report = []
+    for name in jars:
+        version = known.get(hashes[name])
+        if version is None:
+            report.append({"file": name, "status": "unknown", "detail": "not found on Modrinth"})
+            continue
+        fits_game, fits_loader = modrinth.supports(version, game_version, row["mod_loaders"])
+        if fits_game and fits_loader:
+            report.append({"file": name, "status": "compatible", "detail": version.get("version_number")})
+        else:
+            games = version.get("game_versions", [])
+            report.append({"file": name, "status": "incompatible",
+                           "detail": "built for Minecraft %s" % (", ".join(games[:3]) + (" and later" if len(games) > 3 else ""))})
+    return report
+
+
 def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False, diff=None):
     """Resolve, then apply."""
     return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode, diff)

@@ -72,5 +72,21 @@ def resolve(project, game_version, loaders, fetch):
     }
 
 
+def identify(hashes, post):
+    """Which Modrinth versions do these file hashes belong to? {sha512: version}, unknown hashes absent.
+
+    post is a callable taking (url, body) and returning parsed JSON.
+    """
+    if not hashes:
+        return {}
+    return post("%s/version_files" % API, {"hashes": sorted(hashes), "algorithm": "sha512"})
+
+
+def supports(version, game_version, loaders):
+    """(works with the game version, works with a loader) for a Modrinth version object."""
+    return (game_version in version.get("game_versions", []),
+            any(l in version.get("loaders", []) for l in loaders))
+
+
 def sha512_hex(data):
     return hashlib.sha512(data).hexdigest()

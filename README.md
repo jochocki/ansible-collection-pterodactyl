@@ -145,6 +145,21 @@ Configuration tab. `pterodactyl_build` (and `minecraft_server`) take them as:
 touched. Give it a list and that list is the complete set of mods. `vanilla`
 servers can't have mods, so the module refuses the option for them.
 
+**Leaving `mods` out is not the same as "no mods", and an empty block is not an
+empty list.** In YAML a bare `mods:` with nothing after it is `null`, which the
+module treats as not set, so nothing is touched. Only `mods: []` is an empty
+list, and that deletes every `.jar` in `/mods` (other files stay).
+
+**A version change on a server whose mods you don't manage is checked.** The old
+jars stay where they are, and Fabric refuses to start if one doesn't support the
+new version. So before anything starts, the module looks each jar up on Modrinth
+by its hash and reports `compatible`, `incompatible` (with the versions it was
+built for) or `unknown` (not on Modrinth) as `unmanaged_mods`, with a warning for
+each one that won't load. It also does this under `--check`, so you see it before
+the run. It never changes those jars, and it skips the check for more than 40 jars
+or a loader without mod support. List `mods` to have them matched to the new
+version instead.
+
 Entries are Modrinth project **slugs**, the last part of a project's URL
 (`modrinth.com/mod/fabric-api` is `fabric-api`). A project ID works too, and is
 the safer pin, because an author can rename a slug. A slug is not always the

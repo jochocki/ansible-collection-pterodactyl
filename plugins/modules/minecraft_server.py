@@ -16,7 +16,7 @@ description:
   - A version change stops the server, backs it up (making room by deleting the
     oldest unlocked backup) and reinstalls it. It starts again afterwards if it
     was running.
-  - A reinstall is checked by its effect: the jar the server starts (C(SERVER_JARFILE)) must have
+  - A reinstall is checked by its effect. The jar the server starts (C(SERVER_JARFILE)) must have
     been rewritten. The panel can report success for an install that never ran, for example when
     Wings cannot pull the egg's install image, so a jar that is missing or untouched fails the
     run with the server left stopped and the location of Wings' install log.
@@ -101,8 +101,8 @@ options:
     description:
       - Run the full version-change sequence (stop, backup, reinstall, restart) even when the
         version already matches.
-      - Use it to repair a server whose files do not match its version. It is not idempotent: it
-        reports changed every run, so set it for one run only.
+      - Use it to retry an install that did not take. It is not idempotent and reports changed
+        every run, so set it for one run only.
     type: bool
     default: false
   backup_before_upgrade:
@@ -112,8 +112,9 @@ options:
   mods:
     description:
       - Modrinth project slugs or IDs, the complete set of mods for the server.
-      - Leave it out to leave C(/mods) alone. An empty list removes every mod
-        (with O(purge=true)). Not valid for the V(vanilla) loader.
+      - Leave it out to leave C(/mods) alone. Then a version change checks the jars already there
+        against Modrinth and warns about any that will not load (see RV(unmanaged_mods)).
+      - An empty list removes every mod (with O(purge=true)). Not valid for the V(vanilla) loader.
       - Required dependencies, such as V(fabric-api), are not added for you. List them.
     type: list
     elements: str
@@ -181,6 +182,26 @@ power_after:
   description: V(started) or V(stopped), the state the module left the server in.
   returned: success
   type: str
+unmanaged_mods:
+  description:
+    - Returned when the version changes on a server whose mods are not managed (no O(mods)).
+    - Each existing jar is looked up on Modrinth by its hash and reported as V(compatible) or
+      V(incompatible) with the new version, or V(unknown) if Modrinth doesn't know it. The
+      jars are never changed, and incompatible or unknown ones also raise a warning.
+    - Not returned when there are no jars, more than 40, or the loader has no mod support.
+  returned: when it applies
+  type: list
+  elements: dict
+  contains:
+    file:
+      description: The jar.
+      type: str
+    status:
+      description: V(compatible), V(incompatible) or V(unknown).
+      type: str
+    detail:
+      description: The Minecraft versions an incompatible jar was built for, or why it is unknown.
+      type: str
 mods:
   description: What happened to the mods. Not returned unless O(mods) is set.
   returned: when O(mods) is set and the server exists
@@ -284,6 +305,9 @@ def main():
         def fetch(url):
             return phttp.get_json(url, headers={"User-Agent": p["user_agent"]})
 
+        def post(url, body):
+            return phttp.post_json(url, body, headers={"User-Agent": p["user_agent"]})
+
         result = converge_minecraft(
             client,
             {
@@ -301,6 +325,7 @@ def main():
             },
             mods=p["mods"],
             fetch=fetch,
+            post=post,
             purge=p["purge"],
             check_mode=module.check_mode,
             backup=p["backup_before_upgrade"],
@@ -308,6 +333,12 @@ def main():
         server = result.pop("server")
         if server:
             result["identifier"] = server.get("identifier")
+        result.pop("version_changed", None)
+        for entry in result.get("unmanaged_mods") or []:
+            if entry["status"] != "compatible":
+                module.warn("%s: %s in /mods is %s (%s); mods are not managed here, so it was left alone. List mods "
+                            "to have them matched to %s." % (p["name"], entry["file"], entry["status"],
+                                                             entry["detail"], p["version"]))
         diff = result.pop("diff")
         if module._diff:
             result.update(diff_result(p["name"], diff))

@@ -50,6 +50,14 @@ def request_with_headers(method, url, headers=None, data=None, timeout=60, valid
         raise HttpError(0, str(exc.reason), url)
 
 
+def post_json(url, body, headers=None, timeout=60, validate_certs=True, http=request):
+    status, raw = http("POST", url, dict(headers or {}, **{"Content-Type": "application/json"}),
+                       json.dumps(body).encode("utf-8"), timeout, validate_certs)
+    if status != 200:
+        raise HttpError(status, raw.decode("utf-8", "replace"), url)
+    return json.loads(raw.decode("utf-8"))
+
+
 def get_json(url, headers=None, timeout=60, validate_certs=True, http=request):
     status, body = http("GET", url, headers, None, timeout, validate_certs)
     if status != 200:
