@@ -31,11 +31,11 @@ def plan(wanted, present):
     return pull, keep, stale
 
 
-def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False):
-    """Install, verify and (optionally) prune. Returns a result dict.
+def resolve_mods(version, loader, projects, fetch):
+    """Resolve every project to the file to install, or raise listing all failures.
 
-    Every project resolves before anything changes on the server, so one bad
-    project name can't leave a half-updated mods directory.
+    Reads nothing from, and changes nothing on, the server, so callers run it
+    first: a bad project name then can't leave a half-updated server.
     """
     row = LOADERS[loader]
     if not row["mod_loaders"]:
@@ -53,13 +53,17 @@ def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, 
             errors.append("%s is not a Modrinth project (use the slug from its URL, or its ID)" % project)
     if errors:
         raise PterodactylError("cannot resolve mods: " + "; ".join(errors))
+    return wanted
 
+
+def apply_mods(client, identifier, wanted, purge=True, check_mode=False):
+    """Install, verify and (optionally) prune. Returns a result dict."""
     present = client.list_files(identifier, MODS_DIR)
     created_dir = False
     if present is None:
-        created_dir = True
         present = []
-        if not check_mode:
+        created_dir = bool(wanted)
+        if created_dir and not check_mode:
             client.create_folder(identifier, "/", "mods")
 
     pull, keep, stale = plan(wanted, present)
@@ -90,3 +94,8 @@ def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, 
     if purge and stale:
         client.delete_files(identifier, MODS_DIR, stale)
     return result
+
+
+def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, check_mode=False):
+    """Resolve, then apply."""
+    return apply_mods(client, identifier, resolve_mods(version, loader, projects, fetch), purge, check_mode)

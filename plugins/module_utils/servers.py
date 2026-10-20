@@ -11,6 +11,10 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft imp
     LOADERS,
     java_image,
 )
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.mods import (
+    apply_mods,
+    resolve_mods,
+)
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import (
     PterodactylError,
     wait_until,
@@ -248,3 +252,43 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         "previous_power": previous_power,
         "power_after": power_after,
     }
+
+
+def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mode=False, backup=True,
+                       sleep=time.sleep):
+    """Converge a server and, when `mods` is given, its mods, then its power.
+
+    mods=None leaves /mods alone. A list (even an empty one) makes it the
+    complete set of mods. Mods resolve before anything else, so an unknown
+    project fails with the server untouched. If the mods fail to install after
+    a version change, the server is left stopped rather than booted without
+    them.
+    """
+    wanted = None
+    if mods is not None:
+        wanted = resolve_mods(spec["version"], spec["loader"], mods, fetch)
+
+    result = ensure_minecraft_server(
+        client, spec, check_mode=check_mode, restore_power=mods is None, backup=backup, sleep=sleep)
+    if wanted is None:
+        return result
+
+    server = result["server"]
+    if server is None:  # check mode, server not created yet
+        result["mods"] = None
+        result["actions"].append("install %d mods once the server exists" % len(wanted))
+        return result
+
+    outcome = apply_mods(client, server["identifier"], wanted, purge=purge, check_mode=check_mode)
+    result["mods"] = outcome
+    if outcome["changed"]:
+        result["changed"] = True
+        result["actions"].append("mods: %d installed, %d removed" % (len(outcome["installed"]), len(outcome["removed"])))
+
+    if not check_mode and result["previous_power"] == "started":
+        if result["power_after"] == "stopped":
+            set_power(client, server["identifier"], "started", sleep=sleep)
+        elif outcome["changed"]:
+            set_power(client, server["identifier"], "restarted", sleep=sleep)
+        result["power_after"] = "started"
+    return result

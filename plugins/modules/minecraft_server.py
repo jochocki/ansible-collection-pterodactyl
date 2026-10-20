@@ -7,15 +7,20 @@ __metaclass__ = type
 
 DOCUMENTATION = r"""
 module: minecraft_server
-short_description: Create and upgrade a Minecraft server on a Pterodactyl panel
+short_description: Create, upgrade and mod a Minecraft server on a Pterodactyl panel
 description:
   - Creates the server if it is missing, converges its limits, and moves it to
     a new Minecraft version.
   - The version is checked against Mojang's release manifest, and the Java
     image follows from it (8, 17, 21 or 25).
   - A version change stops the server, backs it up (making room by deleting the
-    oldest unlocked backup), reinstalls it, and restores its power state. Set
-    O(restore_power=false) to leave it stopped so mods can be swapped first.
+    oldest unlocked backup) and reinstalls it. It starts again afterwards if it
+    was running.
+  - With O(mods), the server's mods are kept in step with Modrinth too, for the
+    server's own version and loader. Mods resolve before anything else, so an
+    unknown project leaves the server untouched. They are installed before the
+    server starts again, and a running server is restarted when its mods changed.
+    If they fail to install after a version change, the server is left stopped.
   - Servers are found by O(external_id), then by exact O(name). A server found by
     name has its external ID set, so a later rename does not orphan it.
 options:
@@ -69,10 +74,26 @@ options:
     description: Back the server up before a version change.
     type: bool
     default: true
-  restore_power:
-    description: Start the server again after a version change if it was running.
+  mods:
+    description:
+      - Modrinth project slugs or IDs, the complete set of mods for the server.
+      - Leave it out to leave C(/mods) alone. An empty list removes every mod
+        (with O(purge=true)). Not valid for the V(vanilla) loader.
+      - Required dependencies, such as V(fabric-api), are not added for you. List them.
+    type: list
+    elements: str
+  purge:
+    description:
+      - Delete C(.jar) files in C(/mods) that are not in O(mods), after the listed ones are
+        downloaded and verified. Only used with O(mods).
+      - With V(false), an upgraded mod leaves its old jar behind, and Fabric refuses to start
+        with two jars of one mod.
     type: bool
     default: true
+  user_agent:
+    description: Sent to Modrinth, which asks for a contact in it. Only used with O(mods).
+    type: str
+    default: ansible-collection-jochocki.pterodactyl
   validate_version:
     description: Check O(version) against Mojang's release manifest.
     type: bool
@@ -92,13 +113,17 @@ EXAMPLES = r"""
     node: wings01
     memory: 3000
     cpu: 300
-    restore_power: false
-  register: tiny
+    mods:
+      - fabric-api
+      - xaeros-minimap
+      - xaeros-world-map
 
-- name: Put it back the way it was
-  jochocki.pterodactyl.pterodactyl_power:
-    server: Tiny Animals
-    state: "{{ tiny.previous_power }}"
+- name: A vanilla server has no mods
+  jochocki.pterodactyl.minecraft_server:
+    name: The Warden
+    loader: vanilla
+    version: "1.21"
+    node: wings01
 """
 
 RETURN = r"""
@@ -112,11 +137,30 @@ previous_power:
   returned: success
   type: str
 power_after:
-  description:
-    - V(started) or V(stopped), the state the module left the server in.
-    - It differs from RV(previous_power) after a version change with O(restore_power=false).
+  description: V(started) or V(stopped), the state the module left the server in.
   returned: success
   type: str
+mods:
+  description: What happened to the mods. Not returned unless O(mods) is set.
+  returned: when O(mods) is set and the server exists
+  type: dict
+  contains:
+    installed:
+      description: Files pulled onto the server.
+      type: list
+      elements: str
+    removed:
+      description: Files deleted from the server.
+      type: list
+      elements: str
+    unchanged:
+      description: Files already present with the right name and size.
+      type: list
+      elements: str
+    left_in_place:
+      description: Unlisted jars kept because O(purge=false).
+      type: list
+      elements: str
 identifier:
   description: The server's 8-character identifier.
   returned: when the server exists
@@ -133,13 +177,14 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.common import
     connection_spec,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft import (
+    LOADERS,
     MOJANG_MANIFEST,
     check_version,
     release_ids,
 )
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers import (
-    ensure_minecraft_server,
+    converge_minecraft,
     find_server,
 )
 
@@ -165,7 +210,9 @@ def main():
         io=dict(type="int"),
         backups=dict(type="int"),
         backup_before_upgrade=dict(type="bool", default=True),
-        restore_power=dict(type="bool", default=True),
+        mods=dict(type="list", elements="str"),
+        purge=dict(type="bool", default=True),
+        user_agent=dict(type="str", default="ansible-collection-jochocki.pterodactyl"),
         validate_version=dict(type="bool", default=True),
     )
     module = AnsibleModule(argument_spec=spec, supports_check_mode=True)
@@ -173,6 +220,8 @@ def main():
     try:
         client = build_client(module)
         external_id = p["external_id"] or default_external_id(p["name"])
+        if p["mods"] is not None and not LOADERS[p["loader"]]["mod_loaders"]:
+            module.fail_json(msg="the %s loader does not support mods; leave mods out" % p["loader"])
 
         if p["state"] == "absent":
             server = find_server(client.servers(), external_id=external_id, name=p["name"])
@@ -185,7 +234,10 @@ def main():
         else:
             check_version(p["version"], {p["version"]})
 
-        result = ensure_minecraft_server(
+        def fetch(url):
+            return phttp.get_json(url, headers={"User-Agent": p["user_agent"]})
+
+        result = converge_minecraft(
             client,
             {
                 "name": p["name"],
@@ -196,8 +248,10 @@ def main():
                 "owner": p["owner"],
                 "limits": {k: p[k] for k in ("memory", "cpu", "disk", "swap", "io", "backups")},
             },
+            mods=p["mods"],
+            fetch=fetch,
+            purge=p["purge"],
             check_mode=module.check_mode,
-            restore_power=p["restore_power"],
             backup=p["backup_before_upgrade"],
         )
         server = result.pop("server")
