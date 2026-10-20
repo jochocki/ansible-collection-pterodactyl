@@ -14,3 +14,15 @@ tags:
   - gaming
 repository: https://github.com/jochocki/ansible-collection-pterodactyl
 issues: https://github.com/jochocki/ansible-collection-pterodactyl/issues
+# Development files that live in the checkout but are not part of the collection.
+# Without these, a build run after `uv sync` packs the whole .venv.
+build_ignore:
+  - .github
+  - .gitignore
+  - .python-version
+  - .pytest_cache
+  - .venv
+  - dist
+  - pyproject.toml
+  - scripts
+  - uv.lock
