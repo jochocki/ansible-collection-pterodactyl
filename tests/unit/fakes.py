@@ -11,7 +11,7 @@ def server(**over):
         "container": {
             "image": "ghcr.io/pterodactyl/yolks:java_21",
             "startup_command": "java -jar {{SERVER_JARFILE}}",
-            "environment": {"MC_VERSION": "1.21.11"},
+            "environment": {"MC_VERSION": "1.21.11", "SERVER_JARFILE": "fabric-server-launch.jar"},
         },
     }
     base.update(over)
@@ -40,6 +40,7 @@ class FakeClient(object):
         self.own = {9}
         self.primary = 9
         self.ignore_allocation_changes = False  # the panel skips them silently
+        self.recreate = []  # files the installer writes back on a reinstall
         self.reads = []
 
     def names(self):
@@ -89,6 +90,8 @@ class FakeClient(object):
 
     def reinstall(self, sid):
         self._log("reinstall")
+        if self.recreate:
+            self.files = (self.files or []) + [{"name": n, "size": 1, "is_file": True} for n in self.recreate]
 
     def delete_server(self, sid):
         self._log("delete_server", sid)
@@ -127,6 +130,8 @@ class FakeClient(object):
 
     def delete_files(self, identifier, root, files):
         self._log("delete_files", tuple(files))
+        if self.files is not None:
+            self.files = [f for f in self.files if f["name"] not in files]
 
     def pull_file(self, identifier, url, directory, filename):
         self._log("pull_file", filename)

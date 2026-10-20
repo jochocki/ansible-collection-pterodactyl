@@ -44,6 +44,35 @@ def current_version(server, loader):
     return env.get(LOADERS[loader]["version_var"])
 
 
+def stale_install_files(client, server, loader):
+    """Installer leftovers in the server's root that would survive a reinstall (see LOADERS)."""
+    row = LOADERS[loader]
+    names = list(row.get("reinstall_removes", ()))
+    launcher = ((server.get("container") or {}).get("environment") or {}).get(row.get("launcher_var", ""))
+    if launcher:
+        names.append(launcher)
+    if not names:
+        return []
+    present = {f["name"] for f in (client.list_files(server["identifier"], "/") or [])}
+    return [n for n in names if n in present]
+
+
+def check_recreated(client, server, loader, removed):
+    """A reinstall that did not bring the removed installer files back has not installed anything."""
+    row = LOADERS[loader]
+    must = set(row.get("reinstall_must_recreate", ()))
+    launcher = ((server.get("container") or {}).get("environment") or {}).get(row.get("launcher_var", ""))
+    if launcher:
+        must.add(launcher)
+    present = {f["name"] for f in (client.list_files(server["identifier"], "/") or [])}
+    missing = sorted(n for n in removed if n in must and n not in present)
+    if missing:
+        raise PterodactylError(
+            "the reinstall finished but did not recreate %s. Check the server's install log in the panel; "
+            "the server is left stopped" % ", ".join(missing)
+        )
+
+
 def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, backup=True, sleep=time.sleep):
     """Create or converge one Minecraft server.
 
@@ -104,32 +133,40 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
 
     version_changed = current_version(server, loader) != spec["version"]
     image_changed = (server.get("container") or {}).get("image") != image
+    # A forced reinstall repairs a server whose files don't match its version.
+    reinstall = version_changed or bool(spec.get("reinstall"))
+    stale = stale_install_files(client, server, loader) if reinstall else []
     if version_changed or image_changed:
         actions.append("set %s %s on %s" % (loader, spec["version"], image))
         if image_changed:
             record(diff, "startup", "docker_image", (server.get("container") or {}).get("image"), image)
         if version_changed:
             record(diff, "startup", LOADERS[loader]["version_var"], current_version(server, loader), spec["version"])
-    if version_changed:
-        actions.append("backup, reinstall")
+    if reinstall:
+        actions.append("backup, %sreinstall%s" % (
+            "remove %s, " % ", ".join(stale) if stale else "", "" if version_changed else " (forced)"))
+        record(diff, "reinstall", "installer_files", stale, [])
 
-    if (version_changed or image_changed) and not check_mode:
-        if version_changed:
+    if (reinstall or image_changed) and not check_mode:
+        if reinstall:
             if previous_power == "started":
                 set_power(client, identifier, "stopped", sleep=sleep)
                 power_after = "stopped"
             if backup:
                 actions.append("backup: %s" % rotate_and_backup(
                     client, identifier, changes.get("backups", server["feature_limits"]["backups"]), sleep=sleep))
+            if stale:
+                client.delete_files(identifier, "/", stale)
         update_startup(
             client, server,
             image=image,
             startup=(server.get("container") or {}).get("startup_command") or row["startup"],
             environment=desired_environment(loader, spec["version"]),
         )
-        if version_changed:
+        if reinstall:
             client.reinstall(server["id"])
             wait_installed(client, identifier, "reinstall", sleep)
+            check_recreated(client, server, loader, stale)
             if restore_power and previous_power == "started":
                 set_power(client, identifier, "started", sleep=sleep)
                 power_after = "started"

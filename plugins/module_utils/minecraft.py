@@ -35,6 +35,13 @@ LOADERS = {
             "LOADER_VERSION": "latest",
         },
         "mod_loaders": ("fabric",),
+        # The egg's installer keeps an existing server.jar (the vanilla jar) and its launcher
+        # properties, so a reinstall alone leaves the old Minecraft version in place. These are
+        # removed before a reinstall; the ones in reinstall_must_recreate (and the launcher jar
+        # named by launcher_var) must be back afterwards, or the reinstall did not do its job.
+        "reinstall_removes": ("server.jar", "fabric-server-launcher.properties", "fabric-installer.jar"),
+        "reinstall_must_recreate": ("server.jar",),
+        "launcher_var": "SERVER_JARFILE",
     },
     "paper": {
         "egg": "Paper",

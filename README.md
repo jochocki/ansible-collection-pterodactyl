@@ -38,6 +38,16 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
 - **A version change is a sequence.** The server stops, is backed up (the oldest
   unlocked backup makes room), is reinstalled, gets its mods, and then returns
   to its previous power state.
+- **A reinstall alone doesn't change a Fabric server's version.** The Fabric egg's
+  installer keeps an existing `server.jar` (the vanilla jar), so the server would
+  go on running the old Minecraft version while its variable says the new one.
+  `minecraft_server` removes that jar, the launcher properties and the installer
+  jar (and the launcher named by `SERVER_JARFILE`) after the backup and before
+  the reinstall, and fails, leaving the server stopped, if the reinstall doesn't
+  bring them back. World data, mods and configuration are not touched.
+- **`reinstall: true` repairs a server whose files don't match its version.** It
+  runs the whole sequence even when the version already matches. It always
+  reports `changed`, so use it for one run, not in a regular playbook.
 - **Servers are keyed by `external_id`.** It defaults to the lower-cased,
   dash-separated name. A server found by exact name gets the key set on first
   run, so a later rename does not orphan it.
