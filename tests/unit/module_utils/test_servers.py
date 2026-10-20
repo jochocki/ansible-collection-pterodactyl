@@ -183,10 +183,26 @@ class Converge(unittest.TestCase):
         self.assertNotIn("power", c.names())
         self.assertEqual(out["previous_power"], "stopped")
 
-    def test_backup_can_be_disabled(self):
+    def test_backup_can_be_skipped(self):
         c = FakeClient(servers=[server()], state="offline")
-        ops.ensure_minecraft_server(c, spec(), backup=False, sleep=no_sleep)
+        ops.ensure_minecraft_server(c, spec(), backup="skip", sleep=no_sleep)
         self.assertNotIn("create_backup", c.names())
+        self.assertNotIn("delete_backup", c.names())
+
+    def test_fail_mode_refuses_a_full_server_before_changing_anything(self):
+        for check_mode in (False, True):
+            c = FakeClient(servers=[server(feature_limits={"databases": 0, "allocations": 0, "backups": 2})],
+                           state="running", backups=[bk("a", "1"), bk("b", "2")])
+            with self.assertRaisesRegex(PterodactylError, "backup_before_upgrade"):
+                ops.ensure_minecraft_server(c, spec(), backup="fail", check_mode=check_mode, sleep=no_sleep)
+            self.assertEqual(c.names(), [])
+
+    def test_fail_mode_backs_up_when_there_is_room_and_never_deletes(self):
+        c = FakeClient(servers=[server(feature_limits={"databases": 0, "allocations": 0, "backups": 2})],
+                       state="offline", backups=[bk("a", "1")])
+        ops.ensure_minecraft_server(c, spec(), backup="fail", sleep=no_sleep)
+        self.assertIn("create_backup", c.names())
+        self.assertNotIn("delete_backup", c.names())
 
     def test_image_only_change_does_not_reinstall_or_stop(self):
         s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_21", "startup_command": "x",

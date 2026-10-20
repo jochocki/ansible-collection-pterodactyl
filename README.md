@@ -41,6 +41,10 @@ Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
   when the server holds more backups than its limit; locked ones are never
   deleted, and the run fails if they leave no room), is reinstalled, gets its mods, and then returns
   to its previous power state.
+- **Backups before an upgrade are your call.** `backup_before_upgrade` is `rotate`
+  (the default: delete the oldest unlocked backups to make room), `fail` (never
+  delete; a server at its limit stops the run before anything changes, also under
+  `--check`) or `skip` (no backup).
 - **The egg owns its variables.** On an update only the Minecraft version is
   changed: every other egg variable keeps the server's value, so a server's
   `SERVER_JARFILE` is never overwritten. A new server gets the egg's own defaults

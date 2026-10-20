@@ -106,9 +106,16 @@ options:
     type: bool
     default: false
   backup_before_upgrade:
-    description: Back the server up before a version change.
-    type: bool
-    default: true
+    description:
+      - What to do about a backup before a version change or forced reinstall.
+      - V(rotate) takes a backup, deleting the oldest unlocked backups first when the server is at
+        its backup limit. Locked backups are never deleted; the run fails if they leave no room.
+      - V(fail) takes a backup but never deletes one. If the server is at its limit the run fails
+        before anything changes, also in check mode.
+      - V(skip) takes no backup.
+    type: str
+    choices: [rotate, fail, skip]
+    default: rotate
   mods:
     description:
       - Modrinth project slugs or IDs, the complete set of mods for the server.
@@ -289,7 +296,7 @@ def main():
         ip=dict(type="str"),
         environment=dict(type="dict"),
         reinstall=dict(type="bool", default=False),
-        backup_before_upgrade=dict(type="bool", default=True),
+        backup_before_upgrade=dict(type="str", default="rotate", choices=["rotate", "fail", "skip"]),
         mods=dict(type="list", elements="str"),
         unlisted_mods=dict(type="str", default="fail", choices=["fail", "warn", "ignore"]),
         purge=dict(type="bool", default=True),

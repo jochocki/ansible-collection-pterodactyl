@@ -29,6 +29,7 @@ from ansible_collections.jochocki.pterodactyl.plugins.module_utils.servers impor
     power_label,
     record,
     INSTALL_LOG,
+    check_backup_room,
     rotate_and_backup,
     set_power,
     update_startup,
@@ -108,7 +109,7 @@ def check_install_ran(client, server, name, before, jar_var=None):
         )
 
 
-def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, backup=True, sleep=time.sleep):
+def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, backup="rotate", sleep=time.sleep):
     """Create or converge one Minecraft server.
 
     spec keys: name, external_id, loader, version, node, owner, limits (dict
@@ -164,6 +165,11 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     previous_power = power_label(client.power_state(identifier))
     power_after = previous_power
 
+    if backup == "fail" and (current_version(server, loader) != spec["version"] or spec.get("reinstall")):
+        # First thing, so a full server is left exactly as it was (also in check mode).
+        limit = want.get("backups")
+        check_backup_room(client, identifier, server["feature_limits"]["backups"] if limit is None else limit)
+
     actions += ensure_details(client, server, {"external_id": spec.get("external_id")}, check_mode, diff)
     changes, build_actions = ensure_build(client, server, want, check_mode, diff)
     actions += build_actions
@@ -185,14 +191,14 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
         for key, new in env_changed.items():
             record(diff, "startup", "environment.%s" % key, current_env.get(key), new)
     if reinstall:
-        actions.append("backup, reinstall%s" % ("" if version_changed else " (forced)"))
+        actions.append("%sreinstall%s" % ("" if backup == "skip" else "backup, ", "" if version_changed else " (forced)"))
 
     if (reinstall or startup_changed) and not check_mode:
         if reinstall:
             if previous_power == "started":
                 set_power(client, identifier, "stopped", sleep=sleep)
                 power_after = "stopped"
-            if backup:
+            if backup != "skip":
                 actions.append("backup: %s" % rotate_and_backup(
                     client, identifier, changes.get("backups", server["feature_limits"]["backups"]), sleep=sleep))
         environment = egg_environment(client, server["nest"], server["egg"], loader, spec["version"], current_env, extra)
@@ -260,7 +266,7 @@ def check_unlisted(client, spec, post, policy):
     )
 
 
-def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mode=False, backup=True,
+def converge_minecraft(client, spec, mods=None, fetch=None, purge=True, check_mode=False, backup="rotate",
                        sleep=time.sleep, post=None, unlisted="fail"):
     """Converge a server and, when `mods` is given, its mods, then its power.
 
