@@ -51,7 +51,7 @@ def _token(challenge, repo, http):
     query = {"scope": fields.get("scope") or "repository:%s:pull" % repo}
     if fields.get("service"):
         query["service"] = fields["service"]
-    status, body, _ = http("GET", "%s?%s" % (realm, urlencode(query)))
+    status, body, unused_headers = http("GET", "%s?%s" % (realm, urlencode(query)))
     if status != 200:
         return None
     doc = json.loads(body.decode("utf-8"))
@@ -64,12 +64,12 @@ def check_image(ref, http=request_with_headers):
     url = "https://%s/v2/%s/manifests/%s" % (REGISTRY_HOSTS.get(registry, registry), repo, reference)
     headers = {"Accept": MANIFEST_TYPES}
     try:
-        status, _, resp = http("HEAD", url, headers)
+        status, unused_body, resp = http("HEAD", url, headers)
         if status == 401:
             token = _token(resp.get("www-authenticate", ""), repo, http)
             if not token:
                 return "unknown: %s wants credentials" % registry
-            status, _, resp = http("HEAD", url, dict(headers, Authorization="Bearer %s" % token))
+            status, unused_body, resp = http("HEAD", url, dict(headers, Authorization="Bearer %s" % token))
     except HttpError as exc:
         return "unknown: %s" % exc
     if status == 200:

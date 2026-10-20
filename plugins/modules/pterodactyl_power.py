@@ -36,6 +36,8 @@ attributes:
     support: full
   diff_mode:
     support: none
+  platform:
+    platforms: all
 extends_documentation_fragment:
   - jochocki.pterodactyl.panel
   - ansible.builtin.action_common_attributes

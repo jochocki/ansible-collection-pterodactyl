@@ -81,7 +81,7 @@ class ExplicitEnvironment(unittest.TestCase):
     def migrate(self, rewrites, **extra):
         # A server on the old egg's launcher name, being moved to the maintained egg's server.jar.
         c = FakeClient(servers=[server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
-                                                   "environment": {"MC_VERSION": "26.3", "SERVER_JARFILE": OLD_JAR}})],
+                                                  "environment": {"MC_VERSION": "26.3", "SERVER_JARFILE": OLD_JAR}})],
                        state="running", root=root(OLD_JAR, "server.jar"))
         c.egg_defaults["SERVER_JARFILE"] = "server.jar"
         c.rewrites = rewrites
@@ -102,7 +102,7 @@ class ExplicitEnvironment(unittest.TestCase):
         self.assertEqual((c.calls, out["changed"]), ([], False))
 
     def test_the_install_check_looks_for_the_new_jar_name(self):
-        c, _ = self.migrate(["server.jar"], reinstall=True)
+        c, unused_out = self.migrate(["server.jar"], reinstall=True)
         self.assertEqual(c.names(), ["power", "create_backup", "update_startup", "reinstall", "power"])
 
     def test_and_fails_if_only_the_old_name_was_rewritten(self):
@@ -112,7 +112,7 @@ class ExplicitEnvironment(unittest.TestCase):
     def test_a_server_on_the_old_name_is_told_exactly_what_to_set(self):
         # The maintained egg's install just wrote server.jar, and this server still names the launcher.
         c = FakeClient(servers=[server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
-                                                   "environment": {"MC_VERSION": "26.3", "SERVER_JARFILE": OLD_JAR}})],
+                                                  "environment": {"MC_VERSION": "26.3", "SERVER_JARFILE": OLD_JAR}})],
                        state="running", root=root(OLD_JAR))
         c.egg_defaults["SERVER_JARFILE"] = "server.jar"
         c.rewrites = ["server.jar"]
@@ -130,6 +130,6 @@ class ExplicitEnvironment(unittest.TestCase):
         self.assertNotIn("older version of the egg", str(ctx.exception))
 
     def test_the_diff_shows_the_variable(self):
-        _, out = self.migrate([])
+        unused_c, out = self.migrate([])
         self.assertEqual(out["diff"]["before"]["startup"]["environment.SERVER_JARFILE"], OLD_JAR)
         self.assertEqual(out["diff"]["after"]["startup"]["environment.SERVER_JARFILE"], "server.jar")

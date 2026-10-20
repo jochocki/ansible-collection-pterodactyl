@@ -38,7 +38,7 @@ def _bool(value):
 def egg_info(egg):
     """The facts about an egg that matter when asking whether it still works."""
     script = egg.get("script") or {}
-    runtime = sorted({i for i in (egg.get("docker_images") or {}).values()} | ({egg["docker_image"]} if egg.get("docker_image") else set()))
+    runtime = sorted(set((egg.get("docker_images") or {}).values()) | ({egg["docker_image"]} if egg.get("docker_image") else set()))
     return {
         "id": egg["id"],
         "nest": egg.get("nest"),

@@ -25,7 +25,7 @@ module is a thin wrapper over the same functions in `module_utils`, and
 changes only what you set and nothing else. It does not stop, back up or restart
 the server: ordering is `minecraft_server`'s job, or yours.
 
-Supported loaders for `minecraft_server` in 0.1.0: `fabric`, `paper` and
+Supported loaders for `minecraft_server`: `fabric`, `paper` and
 `vanilla`. The panel needs eggs named `Fabric`, `Paper` and `Vanilla Minecraft`.
 
 ## Behavior worth knowing
@@ -241,12 +241,26 @@ environment variables. The key must belong to a root administrator.
 
 ## Development
 
-The unit tests use only the standard library and a recording fake of the panel
-client:
+The environment is a [uv](https://docs.astral.sh/uv/) project: `uv sync` installs
+ansible-core and pytest. The unit tests use a recording fake of the panel client,
+so they need no panel.
 
 ```bash
-# from the directory that contains ansible_collections/
-PYTHONPATH=$PWD python -m unittest discover \
-  -s ansible_collections/jochocki/pterodactyl/tests/unit \
-  -t . -p 'test_*.py'
+scripts/test.sh unit     # pytest
+scripts/test.sh sanity   # ansible-test sanity, in its default Docker image
+scripts/test.sh          # both
 ```
+
+The code imports itself as `ansible_collections.jochocki.pterodactyl`, and
+`ansible-test` has to run from a directory with that path, so the script runs
+both on a temporary copy laid out that way. Sanity needs Docker. CI runs the
+same two commands on every PR.
+
+## Releasing
+
+Bump `version` in `galaxy.yml` and move the `CHANGELOG.md` Unreleased entries
+under a heading for it, merge, then tag the merge commit `vX.Y.Z` and
+push the tag. The `release` workflow checks the tag matches `galaxy.yml`, runs
+the tests, builds the collection and publishes it to Galaxy with the
+`GALAXY_API_KEY` repository secret. A published version can't be replaced, so
+get the number right first.

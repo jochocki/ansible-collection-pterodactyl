@@ -1,0 +1,19 @@
+# Python toolchain for developing the collection (not a distributable package;
+# the collection itself is built with `ansible-galaxy collection build`).
+#
+#   uv sync            ansible-core + pytest
+#   scripts/test.sh    unit tests and ansible-test sanity, see below
+
+[project]
+name = "ansible-collection-pterodactyl-dev"
+version = "0"
+description = "Development environment for the jochocki.pterodactyl collection"
+requires-python = ">=3.12"
+dependencies = [
+  "ansible-core",
+]
+
+[dependency-groups]
+dev = [
+  "pytest",
+]

@@ -1,0 +1,48 @@
+name: release
+
+# Publishing to Galaxy is one-way: a version can never be replaced or removed
+# for reuse. So a release is a tag, and the tag has to match galaxy.yml.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install toolchain
+        run: uv sync --locked
+
+      - name: Check the tag matches galaxy.yml
+        run: |
+          version=$(uv run python -c "import yaml; print(yaml.safe_load(open('galaxy.yml'))['version'])")
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match galaxy.yml version ${version}" >&2
+            exit 1
+          fi
+
+      - name: Unit tests
+        run: scripts/test.sh unit
+
+      - name: ansible-test sanity
+        run: scripts/test.sh sanity
+
+      - name: Build
+        run: uv run ansible-galaxy collection build --output-path dist
+
+      # GALAXY_API_KEY: the token from galaxy.ansible.com/ui/token/, stored as
+      # a repository secret.
+      - name: Publish to Galaxy
+        env:
+          GALAXY_API_KEY: ${{ secrets.GALAXY_API_KEY }}
+        run: uv run ansible-galaxy collection publish dist/*.tar.gz --token "${GALAXY_API_KEY}"

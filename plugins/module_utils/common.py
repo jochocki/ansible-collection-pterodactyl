@@ -28,6 +28,7 @@ def diff_result(name, diff):
     """
     if not diff or not (diff["before"] or diff["after"]):
         return {}
+
     def render(side):
         return json.dumps(side, indent=2, sort_keys=True) + "\n"
     return {"diff": {"before": render(diff["before"]), "after": render(diff["after"]),

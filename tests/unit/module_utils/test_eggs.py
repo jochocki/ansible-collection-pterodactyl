@@ -1,4 +1,3 @@
-import copy
 import unittest
 
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils import eggs

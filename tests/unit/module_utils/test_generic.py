@@ -56,7 +56,7 @@ class Build(unittest.TestCase):
         self.assertEqual(actions, ["update build: databases=2, memory=4000"])
 
     def test_zero_is_a_value_not_unset(self):
-        changes, _ = srv.ensure_build(FakeClient(), server(), {"cpu": 0})
+        changes, unused_result = srv.ensure_build(FakeClient(), server(), {"cpu": 0})
         self.assertEqual(changes, {"cpu": 0})
 
     def test_in_sync_is_a_noop(self):
@@ -66,7 +66,7 @@ class Build(unittest.TestCase):
 
     def test_check_mode_reports_without_calling(self):
         c = FakeClient()
-        changes, _ = srv.ensure_build(c, server(), {"memory": 1}, check_mode=True)
+        changes, unused_result = srv.ensure_build(c, server(), {"memory": 1}, check_mode=True)
         self.assertEqual((changes, c.calls), ({"memory": 1}, []))
 
 

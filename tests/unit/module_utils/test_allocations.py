@@ -102,7 +102,7 @@ class Build(unittest.TestCase):
 
     def test_check_mode_plans_without_patching(self):
         c = FakeClient()
-        changes, _ = srv.ensure_build(c, server(), {"port": 25566}, check_mode=True)
+        changes, unused_result = srv.ensure_build(c, server(), {"port": 25566}, check_mode=True)
         self.assertEqual((changes, c.calls), ({"port": 25566}, []))
 
     def test_a_change_the_panel_silently_ignored_is_an_error(self):

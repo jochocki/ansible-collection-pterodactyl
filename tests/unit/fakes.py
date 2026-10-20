@@ -170,5 +170,5 @@ class FakeClient(object):
         return self.contents[path.rsplit("/", 1)[1]]
 
 
-def no_sleep(_):
+def no_sleep(unused_seconds):
     pass

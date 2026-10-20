@@ -54,6 +54,8 @@ attributes:
     support: full
   diff_mode:
     support: full
+  platform:
+    platforms: all
 author:
   - Jordan Ochocki (@jochocki)
 """
@@ -92,7 +94,6 @@ drift:
   elements: dict
 """
 
-import json
 
 from ansible.module_utils.basic import AnsibleModule
 

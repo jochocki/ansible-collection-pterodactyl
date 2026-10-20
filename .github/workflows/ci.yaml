@@ -1,0 +1,31 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup uv
+        uses: astral-sh/setup-uv@v10.3.0
+
+      - name: Install toolchain
+        run: uv sync --locked
+
+      - name: Unit tests
+        run: scripts/test.sh unit
+
+      # Runs in ansible-test's default Docker image, so every Python version
+      # the sanity tests cover is there without installing any.
+      - name: ansible-test sanity
+        run: scripts/test.sh sanity
