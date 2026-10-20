@@ -1,0 +1,16 @@
+---
+namespace: jochocki
+name: pterodactyl
+version: 0.1.0
+readme: README.md
+authors:
+  - Jordan Ochocki
+description: Manage Pterodactyl panel servers and Minecraft mods from Ansible.
+license:
+  - GPL-3.0-or-later
+tags:
+  - minecraft
+  - pterodactyl
+  - gaming
+repository: https://github.com/jochocki/ansible-collection-pterodactyl
+issues: https://github.com/jochocki/ansible-collection-pterodactyl/issues
