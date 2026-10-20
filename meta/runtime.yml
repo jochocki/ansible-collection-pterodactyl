@@ -1,2 +1,9 @@
 ---
 requires_ansible: ">=2.16"
+action_groups:
+  # module_defaults: group/jochocki.pterodactyl.pterodactyl sets the panel
+  # connection once for every module in a play.
+  pterodactyl:
+    - minecraft_server
+    - minecraft_mods
+    - pterodactyl_power

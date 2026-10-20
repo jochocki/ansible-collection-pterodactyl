@@ -143,7 +143,8 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
 
     spec keys: name, external_id, loader, version, node, owner, limits (dict
     of memory/swap/disk/io/cpu/backups, any may be None).
-    Returns {changed, actions, server, previous_power}.
+    Returns {changed, actions, server, previous_power, power_after}. Both power values are
+    "started" or "stopped" and describe the real server, changed or not.
     """
     loader = spec["loader"]
     row = LOADERS[loader]
@@ -155,7 +156,8 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
     if server is None:
         actions.append("create server %s (%s %s, %s)" % (spec["name"], loader, spec["version"], image))
         if check_mode:
-            return {"changed": True, "actions": actions, "server": None, "previous_power": "stopped"}
+            return {"changed": True, "actions": actions, "server": None, "previous_power": "stopped",
+                    "power_after": "stopped"}
         egg = [e for e in client.eggs() if e["name"] == row["egg"]]
         if len(egg) != 1:
             raise PterodactylError("expected one egg named %r, found %d" % (row["egg"], len(egg)))
@@ -175,7 +177,11 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             "allocation": {"default": client.free_allocation(node[0]["id"])},
             "start_on_completion": False,
         })
-        return {"changed": True, "actions": actions, "server": created, "previous_power": "stopped"}
+        # The panel installs a new server in the background; files and power
+        # calls fail until that finishes.
+        wait_until(lambda: not client.is_installing(created["identifier"]), 600, 10, "install to finish", sleep)
+        return {"changed": True, "actions": actions, "server": created,
+                "previous_power": "stopped", "power_after": "stopped"}
 
     if server.get("egg") is not None:
         egg_id = [e["id"] for e in client.eggs() if e["name"] == row["egg"]]
@@ -185,6 +191,8 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             )
 
     identifier = server["identifier"]
+    previous_power = power_label(client.power_state(identifier))
+    power_after = previous_power
 
     if spec.get("external_id") and server.get("external_id") != spec["external_id"]:
         actions.append("set external_id %s" % spec["external_id"])
@@ -204,17 +212,16 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
 
     version_changed = current_version(server, loader) != spec["version"]
     image_changed = (server.get("container") or {}).get("image") != image
-    previous_power = "stopped"
     if version_changed or image_changed:
         actions.append("set %s %s on %s" % (loader, spec["version"], image))
     if version_changed:
         actions.append("backup, reinstall")
 
     if (version_changed or image_changed) and not check_mode:
-        previous_power = power_label(client.power_state(identifier))
         if version_changed:
             if previous_power == "started":
                 set_power(client, identifier, "stopped", sleep=sleep)
+                power_after = "stopped"
             if backup:
                 actions.append("backup: %s" % rotate_and_backup(
                     client, identifier, changes.get("backups", server["feature_limits"]["backups"]), sleep=sleep))
@@ -230,14 +237,14 @@ def ensure_minecraft_server(client, spec, check_mode=False, restore_power=True, 
             wait_until(lambda: not client.is_installing(identifier), 600, 10, "reinstall to finish", sleep)
             if restore_power and previous_power == "started":
                 set_power(client, identifier, "started", sleep=sleep)
+                power_after = "started"
         elif previous_power == "started":
             actions.append("image applies on next restart")
-    elif version_changed or image_changed:
-        previous_power = "started"  # unknown in check mode; assume the common case
 
     return {
         "changed": bool(actions),
         "actions": actions,
         "server": server,
         "previous_power": previous_power,
+        "power_after": power_after,
     }

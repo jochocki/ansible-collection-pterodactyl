@@ -95,6 +95,11 @@ class Create(unittest.TestCase):
         self.assertEqual(payload["allocation"], {"default": 77})
         self.assertEqual(payload["limits"]["memory"], 3000)
 
+    def test_create_waits_for_install(self):
+        c = FakeClient(servers=[])
+        srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        self.assertGreaterEqual(c.installing, 2)  # polled until the fake reported done
+
     def test_check_mode_creates_nothing(self):
         c = FakeClient(servers=[])
         out = srv.ensure_minecraft_server(c, spec(), check_mode=True)
@@ -132,6 +137,25 @@ class Converge(unittest.TestCase):
         c = FakeClient(servers=[server()], state="running", backups=[])
         out = srv.ensure_minecraft_server(c, spec(), restore_power=False, sleep=no_sleep)
         self.assertNotIn(("power", "start"), c.calls)
+        self.assertEqual((out["previous_power"], out["power_after"]), ("started", "stopped"))
+
+    def test_restore_power_true_reports_started_after(self):
+        c = FakeClient(servers=[server()], state="running", backups=[])
+        out = srv.ensure_minecraft_server(c, spec(), sleep=no_sleep)
+        self.assertEqual((out["previous_power"], out["power_after"]), ("started", "started"))
+
+    def test_no_change_reports_the_real_power_state(self):
+        # A no-op run must not tell the playbook the server was stopped.
+        s = server(container={"image": "ghcr.io/pterodactyl/yolks:java_25", "startup_command": "x",
+                              "environment": {"MC_VERSION": "26.3"}})
+        for state, label in (("running", "started"), ("offline", "stopped")):
+            out = srv.ensure_minecraft_server(FakeClient(servers=[s], state=state), spec(), sleep=no_sleep)
+            self.assertFalse(out["changed"])
+            self.assertEqual((out["previous_power"], out["power_after"]), (label, label))
+
+    def test_check_mode_reports_real_power_state(self):
+        c = FakeClient(servers=[server()], state="running")
+        out = srv.ensure_minecraft_server(c, spec(), check_mode=True)
         self.assertEqual(out["previous_power"], "started")
 
     def test_stopped_server_stays_stopped(self):

@@ -108,7 +108,13 @@ actions:
   type: list
   elements: str
 previous_power:
-  description: V(started) or V(stopped), the server's state before the change.
+  description: V(started) or V(stopped), the server's state before the module ran.
+  returned: success
+  type: str
+power_after:
+  description:
+    - V(started) or V(stopped), the state the module left the server in.
+    - It differs from RV(previous_power) after a version change with O(restore_power=false).
   returned: success
   type: str
 identifier:
