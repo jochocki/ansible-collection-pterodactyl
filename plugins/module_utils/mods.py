@@ -6,6 +6,7 @@ from __future__ import absolute_import, division, print_function
 __metaclass__ = type
 
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils import modrinth
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.http import HttpError
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.minecraft import LOADERS
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
 
@@ -46,6 +47,10 @@ def sync_mods(client, identifier, version, loader, projects, fetch, purge=True, 
             wanted.append(modrinth.resolve(project, version, row["mod_loaders"], fetch))
         except modrinth.ModrinthError as exc:
             errors.append(str(exc))
+        except HttpError as exc:
+            if exc.status != 404:
+                raise
+            errors.append("%s is not a Modrinth project (use the slug from its URL, or its ID)" % project)
     if errors:
         raise PterodactylError("cannot resolve mods: " + "; ".join(errors))
 

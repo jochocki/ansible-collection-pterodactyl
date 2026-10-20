@@ -1,6 +1,7 @@
 import unittest
 
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils import mods, modrinth
+from ansible_collections.jochocki.pterodactyl.plugins.module_utils.http import HttpError
 from ansible_collections.jochocki.pterodactyl.plugins.module_utils.pterodactyl import PterodactylError
 from ansible_collections.jochocki.pterodactyl.tests.unit.fakes import FakeClient
 
@@ -66,6 +67,24 @@ class Sync(unittest.TestCase):
         with self.assertRaisesRegex(PterodactylError, "typo-mod"):
             self.run_sync(c, projects=("fabric-api", "typo-mod"), cat=catalog({"fabric-api": GOOD_SHA}))
         self.assertEqual(c.calls, [])
+
+    def test_unknown_slug_names_the_project_and_touches_nothing(self):
+        def fetch(url):
+            if "/project/fabric-exporter/" in url:
+                raise HttpError(404, "not found", url)
+            return catalog({"fabric-api": GOOD_SHA})(url)
+
+        c = FakeClient(files=[f("old.jar")])
+        with self.assertRaisesRegex(PterodactylError, "fabric-exporter is not a Modrinth project"):
+            self.run_sync(c, projects=("fabric-api", "fabric-exporter"), cat=fetch)
+        self.assertEqual(c.calls, [])
+
+    def test_other_http_errors_are_not_swallowed(self):
+        def fetch(url):
+            raise HttpError(503, "down", url)
+
+        with self.assertRaises(HttpError):
+            self.run_sync(FakeClient(files=[]), cat=fetch)
 
     def test_sha_mismatch_removes_file_and_fails_before_purge(self):
         c = FakeClient(files=[f("old.jar")], contents={"fabric-api-1.0.jar": b"tampered"})
